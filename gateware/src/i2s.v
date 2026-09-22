@@ -110,7 +110,17 @@ module i2s
    reg                rx_irq_enable = 1'b0;
 
    /* Transmit FIFO: pushed by dat_sel writes, popped by the shifter at
-    * each frame boundary (frame_load, defined below). */
+    * each frame boundary (frame_load, defined below). i2s.v is
+    * instantiated unconditionally in top.v (unlike every Tools-menu-gated
+    * peripheral) - the `(* ram_style = "block" *)` attribute here is load
+    * -bearing, not cosmetic: without it, yosys maps this array onto
+    * distributed LUT logic (a 16-way read mux per FIFO, confirmed via
+    * synthesis cell counts), a real, always-paid LUT cost for every
+    * bitstream whether or not a sketch ever touches I2S. On BRAM instead
+    * (the same fix sram8bit.v needed for the same reason - see
+    * docs/KNOWN_LIMITATIONS.md), each FIFO costs one BSRAM block instead,
+    * which this design has margin for. */
+   (* ram_style = "block" *)
    reg [31:0]         tx_fifo_mem [0:FIFO_DEPTH-1];
    reg [3:0]          tx_fifo_wptr = 4'd0;
    reg [3:0]          tx_fifo_rptr = 4'd0;
@@ -121,7 +131,9 @@ module i2s
    wire               tx_pop; // driven by the shifter block below
 
    /* Receive FIFO: pushed by the capture logic at each frame boundary
-    * (rx_frame_done, defined below), popped by dat_rx_sel reads. */
+    * (rx_frame_done, defined below), popped by dat_rx_sel reads. Same
+    * `ram_style` reasoning as tx_fifo_mem above. */
+   (* ram_style = "block" *)
    reg [31:0]         rx_fifo_mem [0:FIFO_DEPTH-1];
    reg [3:0]          rx_fifo_wptr = 4'd0;
    reg [3:0]          rx_fifo_rptr = 4'd0;

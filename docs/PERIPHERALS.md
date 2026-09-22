@@ -255,14 +255,32 @@ NanoTangAI's original external SPI link to a *second* Tang Nano 20K board.
 `int8_mac_lane.v`, and `byte_interleave_ram.v` are vendored unmodified
 from that project.
 
-The API mirrors NanoTangAI's `TangNanoAccelerator` (`config()`/
-`loadWeights()`/`compute()`/`getResults()`), minus everything that existed
-only to manage the SPI link: no `begin(SPIClass&, csPin, sckHz)`, no
-`ping()`/`protocolVersion()` (there's nothing external to probe), and no
-`computeDelayMicros()` - `getResults()`'s first register read blocks in
-hardware until the engine's `done` actually fires, rather than a software
-poll loop or a delay sized from a cycle-count formula. See
-`examples/AIAcceleratorTest`.
+The API is a simplified, instance-based take on NanoTangAI's
+`TangNanoAccelerator`: `AIAccelerator accel(cinPadded, k, rows);` sets
+the tile shape at construction (instead of a separate `config()` call);
+`begin()` then allocates this instance's own weight/results buffers on
+the heap (constructors stay light - no allocation before `setup()`
+runs); `loadWeights()` copies in the weight tile once, and `compute()`
+returns the result pointer directly - no separate `getResults()` call,
+and no `begin(SPIClass&, csPin, sckHz)`/`ping()`/`protocolVersion()`/
+`computeDelayMicros()` at all, since there's no SPI link to manage or
+probe. `compute()`'s underlying register read blocks in hardware until
+the engine's `done` actually fires, rather than a software poll loop or
+a delay sized from a cycle-count formula. See `examples/AIAcceleratorTest`.
+
+**Multiple instances**: `AIAccelerator instanceA(...), instanceB(...);`
+each keep their own weight tile and results buffer in heap-allocated
+copies, letting a sketch juggle several weight tiles/shapes with a plain
+C++ object per tile. There is only one physical engine
+(`ai_accel_bus.v` isn't duplicated - real LUT/BRAM cost, same as the
+Tools menu note above), so instances time-slice it: `compute()` only
+re-pushes an instance's config/weights to hardware if a *different*
+instance's `compute()` ran more recently - free if you stick to one
+instance, one weight-tile reload if you alternate. Each instance's
+`compute()` always blocks until its own result is ready before
+returning, so there's no way to interleave two instances' in-flight
+computations - one instance's `compute()` call fully finishes before
+another instance's can start. See `examples/AIAcceleratorMultiInstanceTest`.
 
 Untested on real hardware, like everything else in this repo - and more
 than most, since it also inherits NanoTangAI's own from-simulation-only

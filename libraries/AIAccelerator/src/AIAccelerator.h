@@ -3,97 +3,100 @@
 #include <Arduino.h>
 
 /* On-chip INT8 dot-product accelerator: same compute engine
- * (dot_product_engine.v) and host API shape as the standalone NanoTangAI
- * project's SPI-attached TangNanoAccelerator, but wired directly onto
- * this core's own picorv32 bus (gateware/src/ai_accel_bus.v) instead of
- * going through an external SPI link to a second Tang Nano 20K board -
- * see docs/PERIPHERALS.md "AI accelerator".
- *
- * Differences from NanoTangAI's TangNanoAccelerator, all because there's
- * no separate link to manage:
- *   - begin() takes no SPI object/CS pin/clock speed.
- *   - No ping()/protocolVersion() - there's nothing to probe; if this
- *     bitstream is running, the accelerator is there.
- *   - No computeDelayMicros(): getResults()'s first register read blocks
- *     (via bus backpressure, not a software poll loop or a delay sized
- *     from a cycle-count formula) until the engine's `done` actually
- *     fires. Subsequent reads for the same compute() return immediately.
+ * (dot_product_engine.v) as the standalone NanoTangAI project's
+ * SPI-attached TangNanoAccelerator, but wired directly onto this core's
+ * own picorv32 bus (gateware/src/ai_accel_bus.v) instead of going through
+ * an external SPI link to a second Tang Nano 20K board - see
+ * docs/PERIPHERALS.md "AI accelerator".
  *
  * Usage mirrors dspsDotProdS8()'s role in TinyTTS's Ops.h (see NanoTangAI's
- * own docs/architecture.md): load a kWeightTileRows-row weight tile once
- * (loadWeights()), then for each timestep's gathered activation window,
- * compute() followed directly by getResults() (no delay needed) returns
- * the same raw INT8xINT8->INT32 dot products dspsDotProdS8() would have,
- * one per (row, tap) - rescaling (x_scale/w_rowScale/bias) is unchanged,
- * still done by the caller in float, exactly as Ops.h's conv1d() already
- * does.
- */
-class AIAcceleratorClass
+ * own docs/architecture.md): construct once with the tile shape, load a
+ * kWeightTileRows-row weight tile once (loadWeights()), then for each
+ * timestep's gathered activation window, compute() returns the same raw
+ * INT8xINT8->INT32 dot products dspsDotProdS8() would have, one per
+ * (row, tap) - rescaling (x_scale/w_rowScale/bias) is unchanged, still
+ * done by the caller in float, exactly as Ops.h's conv1d() already does.
+ *
+ * Multiple instances: there is exactly one physical engine
+ * (gateware/src/ai_accel_bus.v isn't duplicated - it's a real LUT/BRAM
+ * cost, see docs/BUILDING.md "AI Accelerator"), so instances share it by
+ * time-slicing rather than running concurrently. Each instance keeps its
+ * own weight tile and results buffer in heap-allocated copies (this
+ * core's heap is the embedded 8MB SDRAM); compute() re-programs the
+ * hardware from that copy only if a *different* instance's compute() ran
+ * more recently, so using a single instance repeatedly costs nothing
+ * extra, and alternating between instances costs one weight-tile reload
+ * (up to rows*k*cinPadded byte-at-a-time register writes) each time you
+ * switch. Because of this sharing, one instance's compute() call must
+ * fully finish (it always returns only once the result is ready - see
+ * compute()) before any *other* instance's compute() runs; there's no
+ * way to interleave two instances' in-flight computations, since both
+ * would be reading/writing the same physical result registers. */
+class AIAccelerator
 {
 public:
-  /// Nothing to initialize - the accelerator is always present in this
-  /// core's gateware. Kept for API familiarity with NanoTangAI's begin().
-  void begin(void) {}
+  /// Leaves the shape unset - call begin(cinPadded, k, rows) before
+  /// loadWeights()/compute(). Useful when the shape isn't known until
+  /// setup() (e.g. a global instance whose tile size depends on runtime
+  /// configuration).
+  AIAccelerator();
 
-  /// Must be called once before loadWeights()/compute() - tells the
-  /// engine the shape it should expect. `rows` must be <= 8 and
-  /// `cinPadded` must be a multiple of 16 (the gateware's fixed
-  /// ROWS/LANES parameters - see gateware/src/ai_accel_bus.v).
-  void config(uint16_t cinPadded, uint8_t k, uint8_t rows)
-  {
-    cinPadded_ = cinPadded;
-    k_ = k;
-    rows_ = rows;
-    TANGNANO20K_AI_CFG_REG = ((uint32_t)rows << 24) | ((uint32_t)k << 16) | cinPadded;
-  }
+  /// `rows` must be <= 8 and `cinPadded` must be a multiple of 16 (the
+  /// gateware's fixed ROWS/LANES parameters - see
+  /// gateware/src/ai_accel_bus.v). Only stores the shape - call begin()
+  /// before loadWeights()/compute() to actually allocate this instance's
+  /// weight/results buffers.
+  AIAccelerator(uint16_t cinPadded, uint8_t k, uint8_t rows);
+  ~AIAccelerator();
+
+  /// Allocates this instance's own weight buffer (rows*k*cinPadded bytes)
+  /// and results buffer (rows*k int32_t entries) on the heap (this core's
+  /// heap is the embedded 8MB SDRAM), using the shape passed to the
+  /// constructor. Call once, before loadWeights()/compute(). Returns
+  /// false if either allocation failed (out of heap) - compute() returns
+  /// nullptr in that case rather than crashing.
+  bool begin(void);
+
+  /// Same as begin(void), but also sets the shape first - for use with
+  /// the empty constructor above, when the shape wasn't known at
+  /// construction time. Equivalent to calling the shape-setting
+  /// constructor followed by begin(void).
+  bool begin(uint16_t cinPadded, uint8_t k, uint8_t rows);
 
   /// `data` is `rows*k*cinPadded` INT8 bytes, row-major: row0's
   /// `k*cinPadded` bytes (tap-major, `[tap][cinPadded]`) then row1's, etc -
   /// exactly the tile layout TinyTTS's Ops.h already builds for INT8
-  /// weights. Must be called after config().
-  void loadWeights(const int8_t *data, size_t len)
-  {
-    (void)len;
-    size_t rowBytes = (size_t)k_ * cinPadded_;
-    const uint8_t *bytes = (const uint8_t *)data;
-
-    for (uint8_t row = 0; row < rows_; row++) {
-      TANGNANO20K_AI_WEIGHT_SEL_REG = row;
-      const uint8_t *rowData = bytes + (size_t)row * rowBytes;
-      for (size_t i = 0; i < rowBytes; i++)
-        TANGNANO20K_AI_WEIGHT_DATA_REG = rowData[i];
-    }
-  }
+  /// weights. Copies `data` into this instance's own heap buffer (see the
+  /// class comment above) rather than pushing it to hardware immediately;
+  /// only needs to be called once per instance, even if the hardware gets
+  /// re-programmed for another instance in between compute() calls.
+  void loadWeights(const int8_t *data, size_t len);
 
   /// `window` is `k*cinPadded` INT8 bytes, `[tap][cinPadded]`, zero-padded
-  /// at sequence boundaries. Starts the engine; getResults() blocks until
-  /// it's done, no separate delay needed.
-  void compute(const int8_t *window, size_t len)
-  {
-    TANGNANO20K_AI_ACT_RESET_REG = 1;
-    const uint8_t *bytes = (const uint8_t *)window;
-    for (size_t i = 0; i < len; i++)
-      TANGNANO20K_AI_ACT_DATA_REG = bytes[i];
-    TANGNANO20K_AI_START_REG = 1;
-  }
-
-  /// Reads back `rows*k` raw INT32 dot products (row-major, [row][tap]).
-  /// The first read blocks (in hardware) until the engine's `done` fires;
-  /// call this right after compute() with no delay in between. `out` must
-  /// have room for `rows*k` entries.
-  void getResults(int32_t *out, uint8_t rows, uint8_t k)
-  {
-    uint16_t count = (uint16_t)rows * k;
-    for (uint16_t i = 0; i < count; i++) {
-      TANGNANO20K_AI_RESULT_ADDR_REG = i;
-      out[i] = (int32_t)TANGNANO20K_AI_RESULT_DATA_REG;
-    }
-  }
+  /// at sequence boundaries. Re-programs the hardware's config/weights
+  /// first if a different instance last used the engine (see the class
+  /// comment above), starts the engine, blocks (via bus backpressure, not
+  /// a software poll loop or a delay sized from a cycle-count formula)
+  /// until it's done, and returns this instance's own results buffer -
+  /// `rows*k` raw INT32 dot products, row-major [row][tap], valid until
+  /// this instance's next compute() call. Returns nullptr if begin()
+  /// wasn't called or its allocation failed.
+  int32_t *compute(const int8_t *window, size_t len);
 
 private:
   uint16_t cinPadded_ = 0;
   uint8_t k_ = 0;
   uint8_t rows_ = 0;
-};
+  int8_t *weights_ = nullptr;
+  size_t weightsLen_ = 0; // rows_*k_*cinPadded_ bytes, set by allocate()
+  int32_t *results_ = nullptr;
 
-extern AIAcceleratorClass AIAccelerator;
+  void config(uint16_t cinPadded, uint8_t k, uint8_t rows);
+  void allocate(void);
+  void ensureLoadedInHardware(void);
+
+  // Which instance's config/weights are currently live in the one
+  // physical engine - nullptr means "unknown/none", forcing the next
+  // compute() (on any instance) to reprogram it.
+  static AIAccelerator *currentInstance_;
+};
