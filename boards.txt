@@ -1,0 +1,18 @@
+menu.none=none
+
+## Sipeed Tang Nano 20K (PicoRV32 soft-SoC)
+## ------------------------------------------
+tangnano20k.name=Tang Nano 20K (PicoRV32 SoC)
+
+tangnano20k.build.core=tangnano20k
+tangnano20k.build.variant=tangnano20k
+tangnano20k.build.mcu=picorv32
+tangnano20k.build.f_cpu=20000000L
+tangnano20k.build.board=TANGNANO20K
+tangnano20k.build.march=rv32i2p0
+tangnano20k.build.mabi=ilp32
+tangnano20k.build.sram_addr_width=13
+
+tangnano20k.upload.tool=tangnano20k_upload
+tangnano20k.upload.maximum_size=32768
+tangnano20k.upload.maximum_data_size=32768

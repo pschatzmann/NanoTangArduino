@@ -1,0 +1,77 @@
+name=Sipeed Tang Nano 20K (PicoRV32 SoC)
+version=0.1.0
+
+# Path to the RISC-V toolchain. This package was developed against the
+# Zephyr SDK's multilib riscv64-zephyr-elf-gcc, which supports the
+# rv32i2p0/ilp32 target our SoC needs. Override compiler.path and/or
+# compiler.prefix in a platform.local.txt next to this file if your
+# toolchain lives elsewhere or uses a different prefix (any bare-metal
+# rv32i gcc works, e.g. riscv32-unknown-elf-).
+compiler.path=/home/pschatzmann/zephyr-sdk-0.17.0/riscv64-zephyr-elf/bin/
+compiler.prefix=riscv64-zephyr-elf-
+
+compiler.warning_flags=
+compiler.warning_flags.none=
+compiler.warning_flags.default=
+compiler.warning_flags.more=-Wall
+compiler.warning_flags.all=-Wall -Wextra
+
+compiler.march={build.march}
+compiler.mabi={build.mabi}
+
+build.defines=-DF_CPU={build.f_cpu} -DARDUINO=10819 -DARDUINO_{build.board} -DARDUINO_ARCH_TANGNANO20K
+
+compiler.c.cmd={compiler.prefix}gcc
+compiler.c.flags=-c -Os -ffunction-sections -fdata-sections -march={compiler.march} -mabi={compiler.mabi} -nostdlib -nostartfiles -std=gnu11 {compiler.warning_flags} {build.defines}
+
+compiler.c.elf.cmd={compiler.prefix}g++
+compiler.c.elf.flags=-nostdlib -nostartfiles -march={compiler.march} -mabi={compiler.mabi} -Os -Wl,--gc-sections -T{build.core.path}/link_cmd.ld -Wl,-Map={build.path}/{build.project_name}.map
+
+compiler.cpp.cmd={compiler.prefix}g++
+compiler.cpp.flags=-c -Os -ffunction-sections -fdata-sections -march={compiler.march} -mabi={compiler.mabi} -nostdlib -nostartfiles -fno-exceptions -fno-rtti -fno-threadsafe-statics -std=gnu++14 {compiler.warning_flags} {build.defines}
+
+compiler.S.cmd={compiler.prefix}gcc
+compiler.S.flags=-c -march={compiler.march} -mabi={compiler.mabi} -x assembler-with-cpp
+
+compiler.ar.cmd={compiler.prefix}ar
+compiler.ar.flags=rcs
+
+compiler.objcopy.cmd={compiler.prefix}objcopy
+compiler.size.cmd={compiler.prefix}size
+
+# Hardcoded rather than resolved via `gcc -print-libgcc-file-name` at build
+# time (arduino-cli's recipe $(...) shell-out didn't play well with nested
+# property substitution here). Update this if you point compiler.path at a
+# different toolchain / gcc version in platform.local.txt.
+compiler.libgcc={compiler.path}../lib/gcc/riscv64-zephyr-elf/12.2.0/libgcc.a
+
+compiler.libraries.ldflags=
+
+# ---------------------------------------------------------------------------
+# Compile recipes
+# ---------------------------------------------------------------------------
+recipe.c.o.pattern="{compiler.path}{compiler.c.cmd}" {compiler.c.flags} {includes} "{source_file}" -o "{object_file}"
+
+recipe.cpp.o.pattern="{compiler.path}{compiler.cpp.cmd}" {compiler.cpp.flags} {includes} "{source_file}" -o "{object_file}"
+
+recipe.S.o.pattern="{compiler.path}{compiler.S.cmd}" {compiler.S.flags} {includes} "{source_file}" -o "{object_file}"
+
+recipe.ar.pattern="{compiler.path}{compiler.ar.cmd}" {compiler.ar.flags} "{archive_file_path}" "{object_file}"
+
+recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.flags} -o {build.path}/{build.project_name}.elf -Wl,--whole-archive {object_files} "{archive_file_path}" -Wl,--no-whole-archive -Wl,--start-group {compiler.libgcc} -Wl,--end-group
+
+# Repurposed: instead of an objcopy-to-hex step, this drives the full FPGA
+# build (bake the program into SRAM init files, then yosys -> nextpnr ->
+# gowin_pack). Expect this to take noticeably longer than a normal
+# Arduino "compile" step - see README.
+recipe.objcopy.hex.pattern=python3 "{runtime.platform.path}/tools/build_bitstream.py" "{build.path}/{build.project_name}.elf" "{compiler.path}{compiler.objcopy.cmd}" "{build.path}/fpga"
+
+recipe.size.pattern="{compiler.path}{compiler.size.cmd}" -A "{build.path}/{build.project_name}.elf"
+
+# ---------------------------------------------------------------------------
+# Upload
+# ---------------------------------------------------------------------------
+tools.tangnano20k_upload.cmd=python3
+tools.tangnano20k_upload.upload.params.verbose=
+tools.tangnano20k_upload.upload.params.quiet=
+tools.tangnano20k_upload.upload.pattern="{cmd}" "{runtime.platform.path}/tools/upload.py" "{build.path}/fpga/prog.fs"
