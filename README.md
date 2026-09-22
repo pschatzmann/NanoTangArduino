@@ -1,4 +1,4 @@
-# Arduino Core for NanoTang
+# Arduino Core for Tang Nano
 
 An Arduino board-support package for the [Sipeed Tang Nano 20K](https://wiki.sipeed.com/hardware/en/tang/tang-nano-20k/nano-20k.html) FPGA development board.
 
