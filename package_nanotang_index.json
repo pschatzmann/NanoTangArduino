@@ -16,8 +16,8 @@
           "category": "Contributed",
           "url": "https://github.com/pschatzmann/arduino-tangnano20k/releases/download/v0.1.0/arduino-tangnano20k-0.1.0.tar.bz2",
           "archiveFileName": "arduino-tangnano20k-0.1.0.tar.bz2",
-          "checksum": "SHA-256:6a9cc157548a9aaf4d2d3593d8345b6228d2dc174e72f707c5b45f8ee96c469b",
-          "size": "177750",
+          "checksum": "SHA-256:5f22c29a4f99a3ac57ef68fb9d357a0cdfd2c99855b0c74bc8743295cab37552",
+          "size": "200381",
           "help": {
             "online": "https://github.com/pschatzmann/arduino-tangnano20k/blob/main/docs/BUILDING.md"
           },
