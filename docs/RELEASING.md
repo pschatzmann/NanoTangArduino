@@ -55,7 +55,36 @@ package version changes, only when the Zephyr SDK version itself changes
 regardless, but you can skip re-uploading those specific assets to the
 release if they're unchanged.
 
-## Steps
+## Automated: `tools/package/do_release.py`
+
+`tools/package/do_release.py` runs every step below end to end, including
+the version bump. Requires `gh` authenticated (`gh auth status`) and
+`arduino-cli` on `PATH` (unless `--skip-verify`/`--dry-run`).
+
+```sh
+# Bump platform.txt to 0.2.0, build the archives, regenerate the index -
+# but don't touch GitHub, git, or run the arduino-cli verification.
+tools/package/do_release.py --version 0.2.0 --dry-run
+
+# Full release: bump platform.txt, build, create/update the v0.2.0 GitHub
+# Release and upload every dist/ archive to it, commit platform.txt +
+# package_nanotang_index.json, push, then verify end-to-end via
+# arduino-cli against the live raw index URL.
+tools/package/do_release.py --version 0.2.0 --push
+
+# Re-run packaging for whatever version is already in platform.txt
+# (no version bump) - e.g. to re-upload archives after fixing something.
+tools/package/do_release.py
+```
+
+Other flags: `--repo owner/repo` (default `pschatzmann/arduino-tangnano20k`),
+`--skip-toolchains` / `--refresh-toolchains` (control step 2, see below),
+`--draft` (create the GitHub Release as a draft), `--skip-verify` (skip
+step 7). Without `--push`, the version bump and index update are committed
+locally but not pushed. See `tools/package/do_release.py --help` for the
+full list.
+
+## Steps (what the script above automates)
 
 1. Bump `platform.txt`'s `version=` line.
 2. (Only needed when the Zephyr SDK version changed, or the very first
