@@ -3,4 +3,9 @@
 *.bin
 *.fs
 *.json
+!package_nanotang_index.json
 build/
+dist/
+platform.local.txt
+.claude/
+.vscode/

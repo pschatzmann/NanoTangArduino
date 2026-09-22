@@ -1,13 +1,15 @@
 name=Sipeed Tang Nano 20K (PicoRV32 SoC)
 version=0.1.0
 
-# Path to the RISC-V toolchain. This package was developed against the
-# Zephyr SDK's multilib riscv64-zephyr-elf-gcc, which supports the
-# rv32i2p0/ilp32 target our SoC needs. Override compiler.path and/or
-# compiler.prefix in a platform.local.txt next to this file if your
-# toolchain lives elsewhere or uses a different prefix (any bare-metal
-# rv32i gcc works, e.g. riscv32-unknown-elf-).
-compiler.path=/home/pschatzmann/zephyr-sdk-0.17.0/riscv64-zephyr-elf/bin/
+# Path to the RISC-V toolchain: the Zephyr SDK's multilib
+# riscv64-zephyr-elf-gcc, which supports the rv32i2p0/ilp32 target our SoC
+# needs. Installed automatically as a Boards Manager tool dependency (see
+# package_nanotang_index.json, docs/RELEASING.md) - {runtime.tools.*.path}
+# resolves to wherever arduino-cli unpacked it. Override compiler.path
+# and/or compiler.prefix in a platform.local.txt next to this file if you'd
+# rather point at a different toolchain (any bare-metal rv32i gcc works,
+# e.g. riscv32-unknown-elf-).
+compiler.path={runtime.tools.riscv-zephyr-elf-0.17.0.path}/bin/
 compiler.prefix=riscv64-zephyr-elf-
 
 compiler.warning_flags=
@@ -19,16 +21,82 @@ compiler.warning_flags.all=-Wall -Wextra
 compiler.march={build.march}
 compiler.mabi={build.mabi}
 
-build.defines=-DF_CPU={build.f_cpu} -DARDUINO=10819 -DARDUINO_{build.board} -DARDUINO_ARCH_TANGNANO20K
+# Overridden per-selection by the Tools > SD Card board menu (see
+# boards.txt). Unlike the AI Accelerator flag above, this isn't about
+# gateware size - libraries/SD is GPLv3 (see docs/LICENSING.md), and
+# compiling it into a sketch makes that sketch's binary a GPLv3
+# derivative. Disabled by default so that happens only when you
+# explicitly opt in, not just by typing #include <SD.h>.
+build.sd_defines=
+
+build.defines=-DF_CPU={build.f_cpu} -DARDUINO=10819 -DARDUINO_{build.board} -DARDUINO_ARCH_TANGNANO20K {build.sd_defines}
+
+# Overridden per-selection by the Tools > Optimize board menu (see
+# boards.txt); this is the fallback if a sketch/IDE somehow doesn't set it.
+build.optimization_flags=-Os
+
+# Overridden per-selection by the Tools > AI Accelerator board menu (see
+# boards.txt): "0" or "1", passed to tools/build_bitstream.py to decide
+# whether to synthesize the AI accelerator gateware at all - it isn't
+# free like an unused software library, since everything in top.v gets
+# synthesized into the bitstream regardless of what a sketch calls.
+build.ai_accel=0
+
+# Overridden by the Tools > Boot Mode board menu (see boards.txt). "0"
+# (SRAM, default) keeps the original always-resynthesize model; "1"
+# (Flash) bakes only the fixed boot stub into SRAM and writes the sketch
+# itself to the onboard flash instead - see tools/build_bitstream.py and
+# docs/PERIPHERALS.md "Flash".
+build.boot_flash=0
+
+# Overridden by the Tools > Extra SPI/I2C board menu (see boards.txt): "0"
+# (default) leaves GPIO0-5 as plain GPIO; "1" synthesizes a second
+# SPI/Wire port on those pins instead - see tools/build_bitstream.py and
+# docs/PERIPHERALS.md.
+build.spi2_i2c2=0
+
+# Overridden by the Tools > Hardware Multiply/Divide board menu (see
+# boards.txt), which also overrides build.march and build.libgcc_path in
+# lockstep - see that menu's comment there for why they must move
+# together. "0" (default) = software mul/div/float, matching every
+# previous build of this core; "1" = real M-extension hardware.
+build.hw_muldiv=0
+
+# Overridden by the Tools > I2S Input board menu (see boards.txt): "0"
+# (default) leaves GPIO6 as plain GPIO and I2S.read() always reads back
+# zero; "1" wires GPIO6 to the I2S peripheral's receive input for an
+# external I2S microphone - see tools/build_bitstream.py and
+# docs/PERIPHERALS.md "Audio (I2S)".
+build.i2s_rx=0
 
 compiler.c.cmd={compiler.prefix}gcc
-compiler.c.flags=-c -Os -ffunction-sections -fdata-sections -march={compiler.march} -mabi={compiler.mabi} -nostdlib -nostartfiles -std=gnu11 {compiler.warning_flags} {build.defines}
+compiler.c.flags=-c {build.optimization_flags} -ffunction-sections -fdata-sections -march={compiler.march} -mabi={compiler.mabi} -nostdlib -nostartfiles -std=gnu11 {compiler.warning_flags} {build.defines}
 
 compiler.c.elf.cmd={compiler.prefix}g++
-compiler.c.elf.flags=-nostdlib -nostartfiles -march={compiler.march} -mabi={compiler.mabi} -Os -Wl,--gc-sections -T{build.core.path}/link_cmd.ld -Wl,-Map={build.path}/{build.project_name}.map
+
+# -Wl,--undefined=irq_vec and =_boot: irq_vec.S/boot.S are only ever
+# reached via picorv32's hardware PROGADDR_IRQ/PROGADDR_RESET jumps, never
+# referenced by any C symbol - so without this, the linker's normal
+# reference-driven archive extraction (core.a is linked without
+# --whole-archive, deliberately, to avoid pulling in unused peripheral
+# code - see the recipe.c.combine.pattern comment history) never even
+# pulls their object files out of core.a in the first place, silently
+# leaving the actual interrupt handler and boot stub code entirely absent
+# from the linked binary. This was a real, previously-undetected bug this
+# project had - see docs/KNOWN_LIMITATIONS.md.
+compiler.c.elf.flags=-nostdlib -nostartfiles -march={compiler.march} -mabi={compiler.mabi} {build.optimization_flags} -Wl,--gc-sections -Wl,--undefined=irq_vec -Wl,--undefined=_boot -T{build.core.path}/link_cmd.ld -Wl,-Map={build.path}/{build.project_name}.map
 
 compiler.cpp.cmd={compiler.prefix}g++
-compiler.cpp.flags=-c -Os -ffunction-sections -fdata-sections -march={compiler.march} -mabi={compiler.mabi} -nostdlib -nostartfiles -fno-exceptions -fno-rtti -fno-threadsafe-statics -std=gnu++14 {compiler.warning_flags} {build.defines}
+# Overridden per-selection by the Tools > C++ Exceptions board menu (see
+# boards.txt). Disabled by default: this core is -nostdlib with no
+# libsupc++/libstdc++, so enabling exceptions still leaves __cxa_throw,
+# _Unwind_Resume, __gxx_personality_v0 etc. unresolved unless your
+# toolchain happens to provide a usable freestanding unwinder - it isn't
+# a "just flip it on and it works" toggle, more a starting point if you
+# want to bring your own C++ runtime support.
+build.exceptions_flags=-fno-exceptions
+
+compiler.cpp.flags=-c {build.optimization_flags} -ffunction-sections -fdata-sections -march={compiler.march} -mabi={compiler.mabi} -nostdlib -nostartfiles {build.exceptions_flags} -fno-rtti -fno-threadsafe-statics -std=gnu++14 {compiler.warning_flags} {build.defines}
 
 compiler.S.cmd={compiler.prefix}gcc
 compiler.S.flags=-c -march={compiler.march} -mabi={compiler.mabi} -x assembler-with-cpp
@@ -39,32 +107,45 @@ compiler.ar.flags=rcs
 compiler.objcopy.cmd={compiler.prefix}objcopy
 compiler.size.cmd={compiler.prefix}size
 
-# Hardcoded rather than resolved via `gcc -print-libgcc-file-name` at build
-# time (arduino-cli's recipe $(...) shell-out didn't play well with nested
-# property substitution here). Update this if you point compiler.path at a
-# different toolchain / gcc version in platform.local.txt.
-compiler.libgcc={compiler.path}../lib/gcc/riscv64-zephyr-elf/12.2.0/libgcc.a
+# build.libgcc_path is set per Tools > Hardware Multiply/Divide selection
+# (see boards.txt) - each menu option's exact path was confirmed via `gcc
+# -print-libgcc-file-name` for that -march, not resolved at build time
+# (arduino-cli's recipe $(...) shell-out didn't play well with nested
+# property substitution here). Update both menu options in boards.txt if
+# you point compiler.path at a different toolchain / gcc version in
+# platform.local.txt.
+compiler.libgcc={build.libgcc_path}
 
 compiler.libraries.ldflags=
+
+# The vendored ArduinoCore-API headers live at cores/tangnano20k/api/ (one
+# level below the core), and third-party libraries (e.g. libraries/SD)
+# commonly do `#include <Print.h>`/`<Stream.h>` etc. expecting them on a
+# plain include path, not a subdirectory - so this needs to reach every
+# compile, not just the core's own sources.
+build.extra_flags=-I{build.core.path}/api
 
 # ---------------------------------------------------------------------------
 # Compile recipes
 # ---------------------------------------------------------------------------
-recipe.c.o.pattern="{compiler.path}{compiler.c.cmd}" {compiler.c.flags} {includes} "{source_file}" -o "{object_file}"
+recipe.c.o.pattern="{compiler.path}{compiler.c.cmd}" {compiler.c.flags} {build.extra_flags} {includes} "{source_file}" -o "{object_file}"
 
-recipe.cpp.o.pattern="{compiler.path}{compiler.cpp.cmd}" {compiler.cpp.flags} {includes} "{source_file}" -o "{object_file}"
+recipe.cpp.o.pattern="{compiler.path}{compiler.cpp.cmd}" {compiler.cpp.flags} {build.extra_flags} {includes} "{source_file}" -o "{object_file}"
 
-recipe.S.o.pattern="{compiler.path}{compiler.S.cmd}" {compiler.S.flags} {includes} "{source_file}" -o "{object_file}"
+recipe.S.o.pattern="{compiler.path}{compiler.S.cmd}" {compiler.S.flags} {build.extra_flags} {includes} "{source_file}" -o "{object_file}"
 
 recipe.ar.pattern="{compiler.path}{compiler.ar.cmd}" {compiler.ar.flags} "{archive_file_path}" "{object_file}"
 
-recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.flags} -o {build.path}/{build.project_name}.elf -Wl,--whole-archive {object_files} "{archive_file_path}" -Wl,--no-whole-archive -Wl,--start-group {compiler.libgcc} -Wl,--end-group
+# No --whole-archive: core.a's members should only be pulled in when
+# actually referenced, so a sketch that doesn't touch e.g. Serial doesn't
+# pay for HardwareSerial.cpp's code - important given the 64KB SRAM budget.
+recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.flags} -o {build.path}/{build.project_name}.elf {object_files} "{archive_file_path}" -Wl,--start-group {compiler.libgcc} -Wl,--end-group
 
 # Repurposed: instead of an objcopy-to-hex step, this drives the full FPGA
 # build (bake the program into SRAM init files, then yosys -> nextpnr ->
 # gowin_pack). Expect this to take noticeably longer than a normal
-# Arduino "compile" step - see README.
-recipe.objcopy.hex.pattern=python3 "{runtime.platform.path}/tools/build_bitstream.py" "{build.path}/{build.project_name}.elf" "{compiler.path}{compiler.objcopy.cmd}" "{build.path}/fpga"
+# Arduino "compile" step - see docs/BUILDING.md.
+recipe.objcopy.hex.pattern=python3 "{runtime.platform.path}/tools/build_bitstream.py" "{build.path}/{build.project_name}.elf" "{compiler.path}{compiler.objcopy.cmd}" "{build.path}/fpga" "{build.ai_accel}" "{build.boot_flash}" "{build.spi2_i2c2}" "{build.hw_muldiv}" "{build.i2s_rx}"
 
 recipe.size.pattern="{compiler.path}{compiler.size.cmd}" -A "{build.path}/{build.project_name}.elf"
 
@@ -74,4 +155,4 @@ recipe.size.pattern="{compiler.path}{compiler.size.cmd}" -A "{build.path}/{build
 tools.tangnano20k_upload.cmd=python3
 tools.tangnano20k_upload.upload.params.verbose=
 tools.tangnano20k_upload.upload.params.quiet=
-tools.tangnano20k_upload.upload.pattern="{cmd}" "{runtime.platform.path}/tools/upload.py" "{build.path}/fpga/prog.fs"
+tools.tangnano20k_upload.upload.pattern="{cmd}" "{runtime.platform.path}/tools/upload.py" "{build.boot_flash}" "{build.path}/fpga/prog.fs" "{build.path}/fpga/prog_flash.bin" "{build.path}/fpga/data.bin"

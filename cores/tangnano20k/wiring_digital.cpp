@@ -1,21 +1,64 @@
 #include "Arduino.h"
 
-/* v1 "pins" are the 6 onboard LEDs (numbered 0..5), memory-mapped as a
- * single 6-bit read/write register. There is no general-purpose GPIO
- * header support yet - see README roadmap. */
+/* v1 "pins": 0-5 are the 6 onboard LEDs (memory-mapped as a single 6-bit
+ * read/write register, individually switchable into PWM mode by
+ * analogWrite() - see wiring_analog.cpp); pin 6 (TANGNANO20K_PIN_KEY2) is
+ * the board's second button, read-only; pin 10 (TANGNANO20K_PIN_SD_CS,
+ * aka SS) is a virtual pin toggling the SPI peripheral's hardware chip
+ * select, so the unmodified libraries/SD library's plain digitalWrite()
+ * calls work (see pins_arduino.h); pins 14-35 (GPIO0-GPIO21) are real
+ * general-purpose I/O on the expansion header, with real pinMode()
+ * support unlike the pins above. */
+
+static inline bool isExpansionGpio(pin_size_t pinNumber)
+{
+  return pinNumber >= TANGNANO20K_PIN_GPIO_BASE &&
+         pinNumber < TANGNANO20K_PIN_GPIO_BASE + TANGNANO20K_GPIO_COUNT;
+}
 
 void pinMode(pin_size_t pinNumber, PinMode mode)
 {
-  /* The LED register is output-only in hardware; accept any mode without
-   * error so sketches written for real Arduino boards still compile. */
-  (void)pinNumber;
+  if (isExpansionGpio(pinNumber)) {
+    uint32_t mask = 1UL << (pinNumber - TANGNANO20K_PIN_GPIO_BASE);
+    bool asOutput = (mode == OUTPUT || mode == OUTPUT_OPENDRAIN);
+    if (asOutput)
+      TANGNANO20K_GPIO_DIR_REG = TANGNANO20K_GPIO_DIR_REG | mask;
+    else
+      TANGNANO20K_GPIO_DIR_REG = TANGNANO20K_GPIO_DIR_REG & ~mask;
+    return;
+  }
+
+  /* The LED register is output-only in hardware and KEY2 is input-only;
+   * accept any mode without error so sketches written for real Arduino
+   * boards still compile. Switch an LED back to plain digital mode, since
+   * on a real Arduino calling pinMode()/digitalWrite() after analogWrite()
+   * stops the PWM. */
   (void)mode;
+  if (pinNumber < TANGNANO20K_NUM_LEDS)
+    TANGNANO20K_PWM_REG(pinNumber) = 0;
 }
 
 void digitalWrite(pin_size_t pinNumber, PinStatus status)
 {
+  if (isExpansionGpio(pinNumber)) {
+    uint32_t mask = 1UL << (pinNumber - TANGNANO20K_PIN_GPIO_BASE);
+    if (status == HIGH)
+      TANGNANO20K_GPIO_OUT_REG = TANGNANO20K_GPIO_OUT_REG | mask;
+    else
+      TANGNANO20K_GPIO_OUT_REG = TANGNANO20K_GPIO_OUT_REG & ~mask;
+    return;
+  }
+
+  if (pinNumber == TANGNANO20K_PIN_SD_CS) {
+    // SD-card chip select is active low.
+    TANGNANO20K_SPI_CS_REG = (status == LOW) ? TANGNANO20K_SPI_CS_ASSERT : 0;
+    return;
+  }
+
   if (pinNumber >= TANGNANO20K_NUM_LEDS)
     return;
+
+  TANGNANO20K_PWM_REG(pinNumber) = 0; // Leaving PWM mode, see pinMode() above.
 
   uint32_t mask = 1UL << pinNumber;
   if (status == HIGH)
@@ -26,8 +69,19 @@ void digitalWrite(pin_size_t pinNumber, PinStatus status)
 
 PinStatus digitalRead(pin_size_t pinNumber)
 {
-  if (pinNumber >= TANGNANO20K_NUM_LEDS)
-    return LOW;
+  if (isExpansionGpio(pinNumber)) {
+    uint32_t mask = 1UL << (pinNumber - TANGNANO20K_PIN_GPIO_BASE);
+    return (TANGNANO20K_GPIO_IN_REG & mask) ? HIGH : LOW;
+  }
 
-  return (TANGNANO20K_LED_REG & (1UL << pinNumber)) ? HIGH : LOW;
+  if (pinNumber < TANGNANO20K_NUM_LEDS)
+    return (TANGNANO20K_LED_REG & (1UL << pinNumber)) ? HIGH : LOW;
+
+  if (pinNumber == TANGNANO20K_PIN_KEY2)
+    return (TANGNANO20K_KEY2_REG & 1UL) ? HIGH : LOW;
+
+  if (pinNumber == TANGNANO20K_PIN_SD_CS)
+    return (TANGNANO20K_SPI_CS_REG & TANGNANO20K_SPI_CS_ASSERT) ? LOW : HIGH;
+
+  return LOW;
 }

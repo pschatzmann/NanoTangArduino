@@ -1,4 +1,12 @@
 menu.none=none
+menu.optimize=Optimize
+menu.ai_accel=AI Accelerator
+menu.sd_card=SD Card
+menu.exceptions=C++ Exceptions
+menu.boot_mode=Boot Mode
+menu.spi2_i2c2=Extra SPI/I2C
+menu.hw_muldiv=Hardware Multiply/Divide
+menu.i2s_rx=I2S Input
 
 ## Sipeed Tang Nano 20K (PicoRV32 soft-SoC)
 ## ------------------------------------------
@@ -7,12 +15,123 @@ tangnano20k.name=Tang Nano 20K (PicoRV32 SoC)
 tangnano20k.build.core=tangnano20k
 tangnano20k.build.variant=tangnano20k
 tangnano20k.build.mcu=picorv32
-tangnano20k.build.f_cpu=20000000L
+tangnano20k.build.f_cpu=26845000L
 tangnano20k.build.board=TANGNANO20K
 tangnano20k.build.march=rv32i2p0
 tangnano20k.build.mabi=ilp32
-tangnano20k.build.sram_addr_width=13
+tangnano20k.build.sram_addr_width=14
 
 tangnano20k.upload.tool=tangnano20k_upload
-tangnano20k.upload.maximum_size=32768
-tangnano20k.upload.maximum_data_size=32768
+tangnano20k.upload.maximum_size=65536
+tangnano20k.upload.maximum_data_size=65536
+
+# Tools > Optimize. Code size matters more than usual here (64KB of
+# internal SRAM holds the whole program, not just a "no room for more
+# libraries" inconvenience), so the default is -Os; -O2/-O3 trade that
+# for speed, and Debug adds -g without changing the actual optimization
+# level much (debug info isn't part of what gets baked into SRAM - see
+# tools/build_bitstream.py - so it doesn't cost SRAM budget).
+tangnano20k.menu.optimize.small=Small (-Os) (Recommended)
+tangnano20k.menu.optimize.small.build.optimization_flags=-Os
+tangnano20k.menu.optimize.fast=Fast (-O2)
+tangnano20k.menu.optimize.fast.build.optimization_flags=-O2
+tangnano20k.menu.optimize.fastest=Fastest (-O3)
+tangnano20k.menu.optimize.fastest.build.optimization_flags=-O3
+tangnano20k.menu.optimize.debug=Debug (-Og -g)
+tangnano20k.menu.optimize.debug.build.optimization_flags=-Og -g
+
+# Tools > AI Accelerator. Unlike a software library (only linked in if a
+# sketch #includes it), gateware/src/ai_accel_bus.v's dot-product engine
+# gets synthesized into the bitstream unconditionally if it's present at
+# all - see tools/build_bitstream.py and top.v's `ifdef WITH_AI_ACCEL.
+# Disabled by default: most sketches don't use it, and it's a real
+# LUT/BRAM cost on a chip this size, not a free one.
+tangnano20k.menu.ai_accel.disabled=Disabled (Recommended)
+tangnano20k.menu.ai_accel.disabled.build.ai_accel=0
+tangnano20k.menu.ai_accel.enabled=Enabled
+tangnano20k.menu.ai_accel.enabled.build.ai_accel=1
+
+# Tools > SD Card. Different reason than AI Accelerator above: libraries/SD
+# is GPLv3 (see docs/LICENSING.md), and its inclusion is otherwise gated
+# only by whether a sketch happens to write `#include <SD.h>`. Disabled by
+# default requires an explicit menu choice - not just an #include - before
+# a sketch takes on that license. Enabling it does NOT change the
+# gateware/bitstream at all (libraries/SD is pure software on top of the
+# always-present SPI peripheral) - this menu only makes libraries/SD/src/SD.h
+# itself compile instead of erroring out.
+tangnano20k.menu.sd_card.disabled=Disabled (Recommended)
+tangnano20k.menu.sd_card.disabled.build.sd_defines=
+tangnano20k.menu.sd_card.enabled=Enabled (GPLv3)
+tangnano20k.menu.sd_card.enabled.build.sd_defines=-DTANGNANO20K_SD_ENABLED
+
+# Tools > C++ Exceptions. Disabled by default: this core is -nostdlib with
+# no libsupc++/libstdc++, so enabling exceptions doesn't give you a
+# working `throw`/`catch` by itself - __cxa_throw, _Unwind_Resume, and
+# __gxx_personality_v0 are still unresolved unless you bring your own
+# freestanding C++ runtime support. See platform.txt.
+tangnano20k.menu.exceptions.disabled=Disabled (Recommended)
+tangnano20k.menu.exceptions.disabled.build.exceptions_flags=-fno-exceptions
+tangnano20k.menu.exceptions.enabled=Enabled
+tangnano20k.menu.exceptions.enabled.build.exceptions_flags=-fexceptions
+
+# Tools > Boot Mode. SRAM (default) is today's model unchanged: the
+# sketch is baked directly into internal SRAM at synthesis time, so every
+# upload re-runs the full FPGA flow (~1-3 minutes) - see
+# tools/build_bitstream.py. Flash boots a small fixed stub
+# (cores/tangnano20k/boot.S) from SRAM that copies the sketch from the
+# onboard SPI flash instead; because that stub never changes per-sketch,
+# the bitstream itself only needs rebuilding when the *core* changes, and
+# ordinary uploads become a fast flash write - see docs/BUILDING.md and
+# docs/PERIPHERALS.md "Flash". Defaults to SRAM since Flash mode needs a
+# one-time bitstream-flash step most sketches don't need to think about.
+tangnano20k.menu.boot_mode.sram=SRAM (Recommended)
+tangnano20k.menu.boot_mode.sram.build.boot_flash=0
+tangnano20k.menu.boot_mode.flash=Flash (fast uploads)
+tangnano20k.menu.boot_mode.flash.build.boot_flash=1
+
+# Tools > Extra SPI/I2C. Disabled by default: this board has only one
+# hardware SPI/I2C-capable bus (the microSD slot's pins, already used by
+# the always-present first SPI/Wire libraries); a second port reuses the
+# same proven spi_master.v/od_gpio2.v modules directly on GPIO0-5 instead
+# of a dedicated bus. Real GPIO-pin cost like AI Accelerator's LUT/BRAM
+# cost - those 6 pins are unavailable as plain GPIO whenever this is
+# enabled, whether or not a sketch actually uses SPI2/Wire2 - see
+# docs/PERIPHERALS.md "SPI, I2C (Wire), and the SD card".
+tangnano20k.menu.spi2_i2c2.disabled=Disabled (Recommended)
+tangnano20k.menu.spi2_i2c2.disabled.build.spi2_i2c2=0
+tangnano20k.menu.spi2_i2c2.enabled=Enabled
+tangnano20k.menu.spi2_i2c2.enabled.build.spi2_i2c2=1
+
+# Tools > Hardware Multiply/Divide. Disabled by default: this changes the
+# CPU's actual instruction set (picorv32's M-extension, ENABLE_MUL/
+# ENABLE_DIV/ENABLE_FAST_MUL in top.v), so the compiler flag and the
+# gateware MUST always change together - a sketch compiled expecting
+# hardware mul/div would execute an illegal instruction on a bitstream
+# built without this. Both are driven from this single menu choice.
+# Speeds up every integer multiply/divide, and every float/double
+# operation too (libgcc's software floating-point routines are internally
+# built from integer multiplies and shifts - see
+# docs/KNOWN_LIMITATIONS.md "No FPU"). build.libgcc_path picks the
+# matching pre-built libgcc.a variant already present in the Zephyr SDK
+# (confirmed via `riscv64-zephyr-elf-gcc -print-libgcc-file-name`) - see
+# platform.txt.
+tangnano20k.menu.hw_muldiv.disabled=Disabled (Recommended)
+tangnano20k.menu.hw_muldiv.disabled.build.march=rv32i2p0
+tangnano20k.menu.hw_muldiv.disabled.build.libgcc_path={compiler.path}../lib/gcc/riscv64-zephyr-elf/12.2.0/libgcc.a
+tangnano20k.menu.hw_muldiv.disabled.build.hw_muldiv=0
+tangnano20k.menu.hw_muldiv.enabled=Enabled
+tangnano20k.menu.hw_muldiv.enabled.build.march=rv32im_zicsr_zifencei
+tangnano20k.menu.hw_muldiv.enabled.build.libgcc_path={compiler.path}../lib/gcc/riscv64-zephyr-elf/12.2.0/rv32im_zicsr_zifencei/ilp32/libgcc.a
+tangnano20k.menu.hw_muldiv.enabled.build.hw_muldiv=1
+
+# Tools > I2S Input. Disabled by default: wires GPIO6 to the I2S
+# peripheral's receive input for an external I2S microphone sharing the
+# onboard MAX98357A's BCLK/WS lines, enabling I2S.read()/full duplex - see
+# gateware/src/i2s.v and docs/PERIPHERALS.md "Audio (I2S)". Real GPIO-pin
+# cost like Extra SPI/I2C's, gated the same way - GPIO6 is unavailable as
+# plain GPIO whenever this is enabled, whether or not a sketch actually
+# calls I2S.read().
+tangnano20k.menu.i2s_rx.disabled=Disabled (Recommended)
+tangnano20k.menu.i2s_rx.disabled.build.i2s_rx=0
+tangnano20k.menu.i2s_rx.enabled=Enabled
+tangnano20k.menu.i2s_rx.enabled.build.i2s_rx=1

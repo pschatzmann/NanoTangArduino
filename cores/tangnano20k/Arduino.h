@@ -5,13 +5,23 @@
 #include "api/HardwareSerial.h"
 #include "tangnano20k_soc.h"
 #include "pins_arduino.h"
-#include "TangNanoI2S.h"
+
+/* SPI, Wire (I2C), and I2S are bundled libraries (libraries/SPI,
+ * libraries/Wire, libraries/I2S), not part of the core - a sketch that
+ * wants them does `#include <SPI.h>` / `#include <Wire.h>` / `#include
+ * <I2S.h>` itself, same as on any other Arduino board. This keeps a
+ * sketch that doesn't use them (e.g. Blink) from linking in code it never
+ * calls, which matters on this board's 64KB internal SRAM budget. */
 
 using namespace arduino;
 
 /* Global Serial instance, defined in HardwareSerial.cpp */
 extern arduino::HardwareSerial &Serial;
 
-/* Global I2S instance (audio out to the onboard MAX98357A), defined in
- * TangNanoI2S.cpp */
-extern tangnano20k::TangNanoI2S I2S;
+/* ArduinoCore-API's Common.h deliberately leaves these two undeclared
+ * ("interrupts() / noInterrupts() must be defined by the core") since
+ * their implementation is inherently core-specific - see wiring_irq.cpp,
+ * which masks/unmasks all of picorv32's maskable IRQ lines via its
+ * `maskirq` instruction. */
+void interrupts(void);
+void noInterrupts(void);

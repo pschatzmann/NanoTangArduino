@@ -19,6 +19,13 @@ clear_bss:
 	j    clear_bss
 clear_bss_done:
 
+	/* Write this sketch's tangnano20k_irq_dispatch address into the fixed
+	 * irq_dispatch_ptr slot irq_vec.S calls through indirectly (see that
+	 * file and link_cmd.ld) - must happen before interrupts can ever be
+	 * unmasked, so before ctors run. */
+	la   a0, tangnano20k_irq_dispatch
+	sw   a0, 0x280(zero)
+
 	/* Run global constructors (C++ static init) */
 	la   a0, __init_array_start
 	la   a1, __init_array_end

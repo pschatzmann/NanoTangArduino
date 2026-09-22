@@ -9,7 +9,16 @@
  * Format of MEM_INIT_FILE is two hex digits per line in a text file.
  * 
  * Reset neither clears nor reinitializes memory.
- * 
+ *
+ * NanoTangArduino patch: the read-data register's async reset (`or negedge
+ * reset_n` below) was removed - a harmless simplification (a plain
+ * synchronous read register with no reset, whose value nothing ever reads
+ * before the first genuine `ce & !wre` cycle). The `(* ram_style = "block" *)`
+ * attribute on `mem` below forces yosys's Gowin memory_libmap pass to map
+ * this array onto real block RAM instead of distributed LUT RAM - without
+ * it, this array is small enough that yosys prefers LUTRAM by default,
+ * which doesn't scale to this array's actual size (see
+ * docs/KNOWN_LIMITATIONS.md).
  */
 
 module sram8
@@ -27,6 +36,7 @@ module sram8
     output [7:0]                  data_out
     );
    
+   (* ram_style = "block" *)
    reg [7:0]     mem[(1 << SRAM_ADDR_WIDTH) - 1:0];
    reg [7:0]     data_out_reg;
 
@@ -38,12 +48,9 @@ module sram8
 
    assign data_out = data_out_reg;
 
-   always @(posedge clk or negedge reset_n)
-     if (~reset_n)
-       data_out_reg <= 0;
-     else
-       if (ce & !wre)
-         data_out_reg <= mem[addr];
+   always @(posedge clk)
+     if (ce & !wre)
+       data_out_reg <= mem[addr];
 
    always @(posedge clk)
      if (ce & wre)

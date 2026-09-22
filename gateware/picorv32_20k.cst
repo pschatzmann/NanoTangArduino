@@ -15,6 +15,11 @@ IO_PORT "leds[1]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
 IO_LOC "leds[0]" 15;
 IO_PORT "leds[0]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
 
+// Onboard BL616's UART bridge (carries Serial back over the same USB
+// cable used for programming, as a separate serial device - see
+// docs/KNOWN_LIMITATIONS.md). Confirmed against Sipeed's official
+// schematic (net labels PIN69_TX->BL616_UART_RX, PIN70_RX<-BL616_UART_TX)
+// and cross-checked against nand2mario/nestang's identical pin choice.
 IO_LOC "uart_tx" 69;
 IO_PORT "uart_tx" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8 BANK_VCCIO=3.3;
 IO_LOC "uart_rx" 70;
@@ -23,10 +28,17 @@ IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=NONE PCI_CLAMP=OFF BANK_VCCIO=3.3;
 IO_LOC "reset_button" 88;
 IO_PORT "reset_button" IO_TYPE=LVCMOS33 PULL_MODE=NONE PCI_CLAMP=OFF BANK_VCCIO=3.3;
 
-// Fed by the onboard clock generator chip, configured for 20MHz
-// (see README "One-time board setup").
-IO_LOC "clk" 10;
-IO_PORT "clk" IO_TYPE=LVCMOS33 PULL_MODE=NONE PCI_CLAMP=OFF BANK_VCCIO=3.3;
+// KEY_S2 (the board's second button, also the MODE1 boot-strap pin -
+// harmless to read after boot).
+IO_LOC "key2_button" 87;
+IO_PORT "key2_button" IO_TYPE=LVCMOS33 PULL_MODE=NONE PCI_CLAMP=OFF BANK_VCCIO=3.3;
+
+// Fixed 27MHz crystal oscillator (SYS_CLK, per Sipeed's own schematic and
+// examples e.g. nestang) - always present, no one-time board setup needed.
+// Fed through an on-chip PLL (Gowin_rPLL_sys, see top.v) to derive the
+// actual system clock.
+IO_LOC "clk_27m" 4;
+IO_PORT "clk_27m" IO_TYPE=LVCMOS33 PULL_MODE=NONE BANK_VCCIO=3.3;
 
 // Onboard MAX98357A I2S amplifier. Pin numbers confirmed against Sipeed's
 // official audio example (sipeed/TangNano-20K-example, audio/src/audio.cst).
@@ -38,3 +50,93 @@ IO_LOC "i2s_ws" 55;
 IO_PORT "i2s_ws" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
 IO_LOC "i2s_bclk" 56;
 IO_PORT "i2s_bclk" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+
+// Onboard microSD card slot bus, repurposed as SPI + I2C (mutually
+// exclusive with using the microSD slot - see docs/PERIPHERALS.md). SPI wiring matches
+// standard SD-over-SPI (CLK/CMD=MOSI/DAT0=MISO/DAT3=CS); I2C uses the two
+// remaining lines, with internal pull-ups enabled since I2C is open-drain.
+IO_LOC "spi_sclk" 83;
+IO_PORT "spi_sclk" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_LOC "spi_mosi" 82;
+IO_PORT "spi_mosi" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_LOC "spi_miso" 84;
+IO_PORT "spi_miso" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+IO_LOC "spi_cs_n" 81;
+IO_PORT "spi_cs_n" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_LOC "i2c_sda" 85;
+IO_PORT "i2c_sda" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_LOC "i2c_scl" 80;
+IO_PORT "i2c_scl" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+
+// General-purpose GPIO: the 22 of the J5/J6 expansion header's "34 free
+// IOs" (per the official Tang Nano 20K Datasheet v1.3 pinout table) not
+// already claimed by the LEDs/I2S/I2C pins above. Several double as the
+// optional RGB LCD FPC connector or the HDMI EDID I2C bus when those are
+// in use - see docs/PERIPHERALS.md "General GPIO" for the full per-pin table.
+IO_LOC "gpio[0]" 73;
+IO_PORT "gpio[0]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[1]" 74;
+IO_PORT "gpio[1]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[2]" 75;
+IO_PORT "gpio[2]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[3]" 77;
+IO_PORT "gpio[3]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[4]" 27;
+IO_PORT "gpio[4]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[5]" 28;
+IO_PORT "gpio[5]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[6]" 25;
+IO_PORT "gpio[6]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[7]" 26;
+IO_PORT "gpio[7]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[8]" 29;
+IO_PORT "gpio[8]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[9]" 30;
+IO_PORT "gpio[9]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[10]" 31;
+IO_PORT "gpio[10]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[11]" 76;
+IO_PORT "gpio[11]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[12]" 42;
+IO_PORT "gpio[12]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[13]" 41;
+IO_PORT "gpio[13]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[14]" 48;
+IO_PORT "gpio[14]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[15]" 49;
+IO_PORT "gpio[15]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[16]" 86;
+IO_PORT "gpio[16]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+// Pin 79 (formerly gpio[17]) is now dedicated to the onboard WS2812 LED
+// below, not general GPIO - see docs/PERIPHERALS.md "WS2812 LED".
+IO_LOC "gpio[17]" 72;
+IO_PORT "gpio[17]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[18]" 71;
+IO_PORT "gpio[18]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[19]" 53;
+IO_PORT "gpio[19]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "gpio[20]" 52;
+IO_PORT "gpio[20]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+
+// Onboard WS2812 addressable RGB LED.
+IO_LOC "ws2812_din" 79;
+IO_PORT "ws2812_din" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+
+// Onboard SPI NOR flash (also used by the Gowin configuration engine to
+// boot the bitstream itself - see docs/PERIPHERALS.md "Flash"). Pin
+// numbers confirmed via an isolated place & route test (nextpnr-himbaechel
+// placed them as ordinary user IOBs with zero errors/warnings) - real,
+// sourced values from nand2mario/nestang's own nano20k.cst (commented out
+// there, but placement was verified independently here).
+IO_LOC "flash_cs_n" 60;
+IO_PORT "flash_cs_n" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "flash_sclk" 59;
+IO_PORT "flash_sclk" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "flash_mosi" 61;
+IO_PORT "flash_mosi" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "flash_miso" 62;
+IO_PORT "flash_miso" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "flash_wp_n" 57;
+IO_PORT "flash_wp_n" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+IO_LOC "flash_hold_n" 63;
+IO_PORT "flash_hold_n" IO_TYPE=LVCMOS33 PULL_MODE=UP;

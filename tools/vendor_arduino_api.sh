@@ -6,12 +6,13 @@
 # (Catch2 unit tests) that isn't meant to be compiled by a sketch build.
 #
 # All headers are copied (harmless if unused - Print.h etc. reference
-# String/IPAddress/etc. only by declaration). Only the .cpp files this v1
-# core actually links against are copied: Common.cpp, Print.cpp, Stream.cpp.
-# String.cpp/IPAddress.cpp/CanMsg*.cpp/PluggableUSB.cpp need malloc/USB
-# support this bare-metal core doesn't provide yet, so their headers are
-# available (for API completeness / future use) but their implementations
-# are intentionally left out of the build.
+# String/IPAddress/etc. only by declaration). Only the .cpp files this
+# core actually links against are copied: Common.cpp, Print.cpp,
+# Stream.cpp, String.cpp (needs malloc/free/realloc - see
+# cores/tangnano20k/tangnano20k_malloc.c). IPAddress.cpp/CanMsg*.cpp/
+# PluggableUSB.cpp need USB/networking support this bare-metal core
+# doesn't provide, so their headers are available (for API completeness /
+# future use) but their implementations are intentionally left out.
 #
 # Run this again after updating the ArduinoCore-API submodule.
 set -euo pipefail
@@ -30,8 +31,8 @@ mkdir -p "$DST"
 done
 
 # Only the .cpp files this core links against.
-for f in Common.cpp Print.cpp Stream.cpp; do
+for f in Common.cpp Print.cpp Stream.cpp String.cpp; do
   cp "$SRC/$f" "$DST/$f"
 done
 
-echo "Vendored ArduinoCore-API headers + {Common,Print,Stream}.cpp into $DST"
+echo "Vendored ArduinoCore-API headers + {Common,Print,Stream,String}.cpp into $DST"
