@@ -9,9 +9,10 @@
  * available on this bare-metal core).
  *
  * `Wire` (this file's global instance) uses the onboard microSD slot's two
- * remaining bus lines - mutually exclusive with using the microSD slot.
- * `Wire2` (libraries/Wire's second global instance, only present when
- * Tools > Extra SPI/I2C is enabled) uses GPIO4/GPIO5 instead - see
+ * remaining bus lines - mutually exclusive with using the microSD slot,
+ * and present by default but removable (Tools > I2C Buses: None) to save
+ * LUTs. `Wire2` (libraries/Wire's second global instance, only present
+ * when Tools > I2C Buses: Two is selected) uses GPIO4/GPIO5 instead - see
  * docs/PERIPHERALS.md. */
 class TwoWire : public arduino::HardwareI2C
 {
@@ -69,4 +70,4 @@ private:
 };
 
 extern TwoWire Wire;
-extern TwoWire Wire2; // Only usable when Tools > Extra SPI/I2C is enabled - see docs/PERIPHERALS.md.
+extern TwoWire Wire2; // Only usable when Tools > I2C Buses: Two is selected - see docs/PERIPHERALS.md.

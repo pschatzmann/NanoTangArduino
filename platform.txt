@@ -49,11 +49,13 @@ build.ai_accel=0
 # docs/PERIPHERALS.md "Flash".
 build.boot_flash=0
 
-# Overridden by the Tools > Extra SPI/I2C board menu (see boards.txt): "0"
-# (default) leaves GPIO0-5 as plain GPIO; "1" synthesizes a second
-# SPI/Wire port on those pins instead - see tools/build_bitstream.py and
-# docs/PERIPHERALS.md.
-build.spi2_i2c2=0
+# Overridden by the Tools > SPI Buses / I2C Buses board menus (see
+# boards.txt): "1" (default, each) is the original always-present primary
+# port; "0" removes it entirely to save LUTs; "2" adds a second,
+# independent port (SPI2 on GPIO0-3 / Wire2 on GPIO4-5) - see
+# tools/build_bitstream.py and docs/PERIPHERALS.md.
+build.spi_count=1
+build.i2c_count=1
 
 # Overridden by the Tools > Hardware Multiply/Divide board menu (see
 # boards.txt), which also overrides build.march and build.libgcc_path in
@@ -158,7 +160,7 @@ recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.f
 # build (bake the program into SRAM init files, then yosys -> nextpnr ->
 # gowin_pack). Expect this to take noticeably longer than a normal
 # Arduino "compile" step - see docs/BUILDING.md.
-recipe.objcopy.hex.pattern=python3 "{runtime.platform.path}/tools/build_bitstream.py" "{build.path}/{build.project_name}.elf" "{compiler.path}{compiler.objcopy.cmd}" "{build.path}/fpga" "{build.ai_accel}" "{build.boot_flash}" "{build.spi2_i2c2}" "{build.hw_muldiv}" "{build.i2s_rx}" "{build.clk_freq_hz}" "{build.pll_idiv}" "{build.pll_fbdiv}" "{build.pll_odiv}"
+recipe.objcopy.hex.pattern=python3 "{runtime.platform.path}/tools/build_bitstream.py" "{build.path}/{build.project_name}.elf" "{compiler.path}{compiler.objcopy.cmd}" "{build.path}/fpga" "{build.ai_accel}" "{build.boot_flash}" "{build.spi_count}" "{build.i2c_count}" "{build.hw_muldiv}" "{build.i2s_rx}" "{build.clk_freq_hz}" "{build.pll_idiv}" "{build.pll_fbdiv}" "{build.pll_odiv}"
 
 recipe.size.pattern="{compiler.path}{compiler.size.cmd}" -A "{build.path}/{build.project_name}.elf"
 

@@ -28,8 +28,9 @@ rather than a full FPGA rebuild - see
 - Stereo I2S audio to the onboard MAX98357A amplifier (transmit), plus
   optional receive/full-duplex against an external I2S microphone
   (Tools > I2S Input)
-- SPI and I2C (`Wire`), plus a second independent SPI + I2C port on GPIO0-5
-  (Tools > Extra SPI/I2C)
+- SPI and I2C (`Wire`), independently configurable 0/1/2 buses each
+  (Tools > SPI Buses / I2C Buses) - a second port lands on GPIO0-3 (SPI2)
+  / GPIO4-5 (I2C2)
 - Reading/writing files on the onboard microSD card (`SD`)
 - On-chip INT8 dot-product AI accelerator
 - `String`

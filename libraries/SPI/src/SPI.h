@@ -11,9 +11,11 @@
  * device can be wired up at a time per port.
  *
  * `SPI` (this file's global instance) uses the onboard microSD slot's bus
- * pins - mutually exclusive with using the microSD slot. `SPI2` (this
- * file's second global instance, only present when Tools > Extra SPI/I2C
- * is enabled) uses GPIO0-3 instead - see docs/PERIPHERALS.md. */
+ * pins - mutually exclusive with using the microSD slot, and present by
+ * default but removable (Tools > SPI Buses: None) to save LUTs. `SPI2`
+ * (this file's second global instance, only present when Tools > SPI
+ * Buses: Two is selected) uses GPIO0-3 instead - see
+ * docs/PERIPHERALS.md. */
 class TangNanoSPIClass : public arduino::HardwareSPI
 {
 public:
@@ -42,4 +44,4 @@ private:
 };
 
 extern TangNanoSPIClass SPI;
-extern TangNanoSPIClass SPI2; // Only usable when Tools > Extra SPI/I2C is enabled - see docs/PERIPHERALS.md.
+extern TangNanoSPIClass SPI2; // Only usable when Tools > SPI Buses: Two is selected - see docs/PERIPHERALS.md.

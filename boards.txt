@@ -4,7 +4,8 @@ menu.ai_accel=AI Accelerator
 menu.sd_card=SD Card
 menu.exceptions=C++ Exceptions
 menu.boot_mode=Boot Mode
-menu.spi2_i2c2=Extra SPI/I2C
+menu.spi_buses=SPI Buses
+menu.i2c_buses=I2C Buses
 menu.hw_muldiv=Hardware Multiply/Divide
 menu.i2s_rx=I2S Input
 menu.f_cpu=Clock Speed
@@ -89,18 +90,35 @@ tangnano20k.menu.boot_mode.sram.build.boot_flash=0
 tangnano20k.menu.boot_mode.flash=Flash (fast uploads)
 tangnano20k.menu.boot_mode.flash.build.boot_flash=1
 
-# Tools > Extra SPI/I2C. Disabled by default: this board has only one
-# hardware SPI/I2C-capable bus (the microSD slot's pins, already used by
-# the always-present first SPI/Wire libraries); a second port reuses the
-# same proven spi_master.v/od_gpio2.v modules directly on GPIO0-5 instead
-# of a dedicated bus. Real GPIO-pin cost like AI Accelerator's LUT/BRAM
-# cost - those 6 pins are unavailable as plain GPIO whenever this is
-# enabled, whether or not a sketch actually uses SPI2/Wire2 - see
-# docs/PERIPHERALS.md "SPI, I2C (Wire), and the SD card".
-tangnano20k.menu.spi2_i2c2.disabled=Disabled (Recommended)
-tangnano20k.menu.spi2_i2c2.disabled.build.spi2_i2c2=0
-tangnano20k.menu.spi2_i2c2.enabled=Enabled
-tangnano20k.menu.spi2_i2c2.enabled.build.spi2_i2c2=1
+# Tools > SPI Buses / I2C Buses. Independent, since - unlike what a single
+# combined toggle used to imply - the primary SPI (microSD slot's pins) and
+# the primary I2C (Wire) cost separate gateware, and the second SPI/I2C
+# ports likewise use non-overlapping pins (SPI2: GPIO0-3, I2C2: GPIO4-5,
+# not a shared GPIO0-5 block) - see gateware/src/top.v. "One" (the default)
+# is the original, always-present primary port each has always shipped
+# with. "None" removes that port's gateware entirely (spi_master.v/
+# od_gpio2.v cost real LUTs even when a sketch never calls SPI/Wire) -
+# SPI/Wire (and anything built on them, e.g. libraries/SD) then silently
+# read back 0/no-op instead of talking to real hardware, same as any other
+# menu-gated peripheral a sketch uses without enabling it. "Two" adds a
+# second, independent port (SPI2/Wire2) on GPIO0-3 (SPI Buses) or GPIO4-5
+# (I2C Buses) - real GPIO-pin cost like AI Accelerator's LUT/BRAM cost,
+# those pins are unavailable as plain GPIO whenever selected, whether or
+# not a sketch actually uses SPI2/Wire2 - see docs/PERIPHERALS.md "SPI,
+# I2C (Wire), and the SD card".
+tangnano20k.menu.spi_buses.one=One (Recommended)
+tangnano20k.menu.spi_buses.one.build.spi_count=1
+tangnano20k.menu.spi_buses.none=None
+tangnano20k.menu.spi_buses.none.build.spi_count=0
+tangnano20k.menu.spi_buses.two=Two
+tangnano20k.menu.spi_buses.two.build.spi_count=2
+
+tangnano20k.menu.i2c_buses.one=One (Recommended)
+tangnano20k.menu.i2c_buses.one.build.i2c_count=1
+tangnano20k.menu.i2c_buses.none=None
+tangnano20k.menu.i2c_buses.none.build.i2c_count=0
+tangnano20k.menu.i2c_buses.two=Two
+tangnano20k.menu.i2c_buses.two.build.i2c_count=2
 
 # Tools > Hardware Multiply/Divide. Disabled by default: this changes the
 # CPU's actual instruction set (picorv32's M-extension, ENABLE_MUL/
@@ -128,7 +146,7 @@ tangnano20k.menu.hw_muldiv.enabled.build.hw_muldiv=1
 # peripheral's receive input for an external I2S microphone sharing the
 # onboard MAX98357A's BCLK/WS lines, enabling I2S.read()/full duplex - see
 # gateware/src/i2s.v and docs/PERIPHERALS.md "Audio (I2S)". Real GPIO-pin
-# cost like Extra SPI/I2C's, gated the same way - GPIO6 is unavailable as
+# cost like SPI Buses/I2C Buses: Two's, gated the same way - GPIO6 is unavailable as
 # plain GPIO whenever this is enabled, whether or not a sketch actually
 # calls I2S.read().
 tangnano20k.menu.i2s_rx.disabled=Disabled (Recommended)
@@ -157,7 +175,7 @@ tangnano20k.menu.i2s_rx.enabled.build.i2s_rx=1
 # Overclocked (54MHz) was verified against this design's actual synthesized
 # timing (yosys -> nextpnr-himbaechel), whose static timing analysis
 # reports this specific core closing at ~75MHz with default menu settings
-# (AI Accelerator/Extra SPI/I2C/I2S Input disabled) - 54MHz leaves real
+# (AI Accelerator/SPI Buses/I2C Buses: Two/I2S Input disabled) - 54MHz leaves real
 # margin under that ceiling. It's also comfortably under sdram.v's own
 # documented 66.7MHz ceiling for its current CAS/T_xx timing parameters.
 # Enabling other gateware-cost menu options alongside this may add logic

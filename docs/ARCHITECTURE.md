@@ -71,14 +71,14 @@ sketch.ino ──arduino-cli/IDE──> RISC-V ELF (cores/tangnano20k + api/)
 | `0x8000_004C`                | I2S receive data register: `{left16,right16}` (read, blocks - Tools > I2S Input only) |
 | `0x8000_0050`                | KEY_S2 button, bit0, read-only                     |
 | `0x8000_0060`-`0x8000_0074`  | PWM duty/enable, one reg per LED channel 0-5       |
-| `0x8000_0080`                | SPI SCLK divisor register (write)                  |
-| `0x8000_0084`                | SPI CS register: bit0 = asserted (write)           |
-| `0x8000_0088`                | SPI data register (read/write)                     |
-| `0x8000_0090`                | I2C open-drain SDA/SCL: write=drive low, read=level|
-| `0x8000_00A0`                | SPI2 SCLK divisor register (write) - Tools > Extra SPI/I2C only |
-| `0x8000_00A4`                | SPI2 CS register: bit0 = asserted (write) - Tools > Extra SPI/I2C only |
-| `0x8000_00A8`                | SPI2 data register (read/write) - Tools > Extra SPI/I2C only |
-| `0x8000_00B0`                | I2C2 open-drain SDA/SCL - Tools > Extra SPI/I2C only |
+| `0x8000_0080`                | SPI SCLK divisor register (write) - Tools > SPI Buses: One+ only |
+| `0x8000_0084`                | SPI CS register: bit0 = asserted (write) - Tools > SPI Buses: One+ only |
+| `0x8000_0088`                | SPI data register (read/write) - Tools > SPI Buses: One+ only |
+| `0x8000_0090`                | I2C open-drain SDA/SCL: write=drive low, read=level - Tools > I2C Buses: One+ only |
+| `0x8000_00A0`                | SPI2 SCLK divisor register (write) - Tools > SPI Buses: Two only |
+| `0x8000_00A4`                | SPI2 CS register: bit0 = asserted (write) - Tools > SPI Buses: Two only |
+| `0x8000_00A8`                | SPI2 data register (read/write) - Tools > SPI Buses: Two only |
+| `0x8000_00B0`                | I2C2 open-drain SDA/SCL - Tools > I2C Buses: Two only |
 | `0x8000_0100`                | GPIO direction register (bits [20:0], 1=output)    |
 | `0x8000_0104`                | GPIO output register (bits [20:0])                 |
 | `0x8000_0108`                | GPIO input register (bits [20:0], read-only)       |

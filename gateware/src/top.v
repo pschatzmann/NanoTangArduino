@@ -61,7 +61,10 @@
  *
  * SPI and I2C both reuse the onboard microSD card slot's bus pins (SPI:
  * CLK/CMD/DAT0/DAT3; I2C: DAT1/DAT2) - using either is mutually exclusive
- * with using the microSD slot. See docs/PERIPHERALS.md.
+ * with using the microSD slot. Both are present by default but can be
+ * removed (Tools > SPI Buses / I2C Buses: None) to save LUTs, or doubled
+ * (Two) for a second, independent port on GPIO0-3 (SPI2)/GPIO4-5 (I2C2) -
+ * see docs/PERIPHERALS.md.
  *
  * The system clock is derived from the board's fixed 27MHz oscillator via
  * an on-chip PLL (Gowin_rPLL_sys - see sys_parameters.v), rather than the
@@ -318,13 +321,31 @@ module top
    assign flash_sel         = mem_valid && ((mem_addr & 32'hff80_0000) == 32'h2000_0000);
    assign spi2_sel          = mem_valid && ((mem_addr & 32'hffff_fff0) == 32'h8000_00A0);
    assign i2c2_sel          = mem_valid && (mem_addr == 32'h8000_00B0);
-`ifndef WITH_SPI2_I2C2
-   // Tools > Extra SPI/I2C: Disabled (the default) - see gpio_bank's
-   // instantiation below for why GPIO0-5 are otherwise reserved for this.
-   // Same silently-wrong-not-hung rationale as the AI accelerator's
-   // fallback above.
+`ifndef WITH_SPI1
+   // Tools > SPI Buses: None. Same silently-wrong-not-hung rationale as
+   // the AI accelerator's fallback below: SPI/Wire (the primary port)
+   // just reads back 0 and accepts writes as no-ops instead of hanging a
+   // sketch that still calls into it (e.g. via libraries/SD, which sits
+   // on top of SPI).
+   assign spi_ready  = spi_sel;
+   assign spi_rdata  = 32'h0;
+`endif
+`ifndef WITH_I2C1
+   // Tools > I2C Buses: None - same rationale as WITH_SPI1 above.
+   assign i2c_ready  = i2c_sel;
+   assign i2c_rdata  = 32'h0;
+`endif
+`ifndef WITH_SPI2
+   // Tools > SPI Buses: One (the default) - see gpio_bank's instantiation
+   // below for why GPIO0-3 are otherwise reserved for this. Same
+   // silently-wrong-not-hung rationale as WITH_SPI1 above.
    assign spi2_ready = spi2_sel;
    assign spi2_rdata = 32'h0;
+`endif
+`ifndef WITH_I2C2
+   // Tools > I2C Buses: One (the default) - see gpio_bank's instantiation
+   // below for why GPIO4-5 are otherwise reserved for this. Same
+   // silently-wrong-not-hung rationale as WITH_SPI1 above.
    assign i2c2_ready = i2c2_sel;
    assign i2c2_rdata = 32'h0;
 `endif
@@ -439,6 +460,7 @@ module top
       .pwm_enabled(pwm_enabled)
       );
 
+`ifdef WITH_SPI1
    spi_master spi
      (
       .clk(clk_sys),
@@ -454,7 +476,15 @@ module top
       .spi_miso(spi_miso),
       .spi_cs_n(spi_cs_n)
       );
+`else
+   // Tools > SPI Buses: None - idle the microSD slot's SPI pins (clock
+   // low, CS deasserted) instead of leaving them undriven.
+   assign spi_sclk = 1'b0;
+   assign spi_mosi = 1'b0;
+   assign spi_cs_n = 1'b1;
+`endif
 
+`ifdef WITH_I2C1
    od_gpio2 i2c
      (
       .clk(clk_sys),
@@ -467,20 +497,32 @@ module top
       .sda(i2c_sda),
       .scl(i2c_scl)
       );
+`else
+   // Tools > I2C Buses: None - let the microSD slot's I2C pins float
+   // (open-drain idle, matching a real I2C bus with no active driver)
+   // instead of leaving them undriven.
+   assign i2c_sda = 1'bz;
+   assign i2c_scl = 1'bz;
+`endif
 
-`ifdef WITH_SPI2_I2C2
-   // GPIO0-5 are claimed by the second SPI/I2C ports below when this menu
-   // option is enabled - gpio_bank still owns bits 0-5 in the register
-   // map (GPIOx numbering never changes), but those specific bits no
-   // longer reach a real pin; gpio_bank_dummy_spi2 is a dead-end sink for
-   // its own drive of those bits. See docs/PERIPHERALS.md "SPI, I2C
-   // (Wire), and the SD card".
-   wire [5:0] gpio_bank_dummy_spi2;
+`ifdef WITH_SPI2
+   // GPIO0-3 are claimed by the second SPI port below when Tools > SPI
+   // Buses: Two is selected - gpio_bank still owns bits 0-3 in the
+   // register map (GPIOx numbering never changes), but those specific
+   // bits no longer reach a real pin; gpio_bank_dummy_spi2 is a dead-end
+   // sink for its own drive of those bits. See docs/PERIPHERALS.md "SPI,
+   // I2C (Wire), and the SD card".
+   wire [3:0] gpio_bank_dummy_spi2;
+`endif
+`ifdef WITH_I2C2
+   // Same idea as gpio_bank_dummy_spi2 above, but for GPIO4-5, claimed by
+   // the second I2C port when Tools > I2C Buses: Two is selected.
+   wire [1:0] gpio_bank_dummy_i2c2;
 `endif
 `ifdef WITH_I2S_RX
-   // Same idea as gpio_bank_dummy_spi2 above, but for the single GPIO6 pin
-   // Tools > I2S Input claims as the external microphone's data-out line -
-   // see docs/PERIPHERALS.md "Audio (I2S)".
+   // Same idea again, but for the single GPIO6 pin Tools > I2S Input
+   // claims as the external microphone's data-out line - see
+   // docs/PERIPHERALS.md "Audio (I2S)".
    wire       gpio_bank_dummy_i2s_rx;
 `endif
 
@@ -494,27 +536,31 @@ module top
       .wdata(mem_wdata),
       .ready(gpio_ready),
       .rdata(gpio_rdata),
-`ifdef WITH_SPI2_I2C2
- `ifdef WITH_I2S_RX
-      .gpio({gpio[20:7], gpio_bank_dummy_i2s_rx, gpio_bank_dummy_spi2})
- `else
-      .gpio({gpio[20:6], gpio_bank_dummy_spi2})
- `endif
+      .gpio({gpio[20:7],
+`ifdef WITH_I2S_RX
+             gpio_bank_dummy_i2s_rx,
 `else
- `ifdef WITH_I2S_RX
-      .gpio({gpio[20:7], gpio_bank_dummy_i2s_rx, gpio[5:0]})
- `else
-      .gpio(gpio)
- `endif
+             gpio[6],
 `endif
+`ifdef WITH_I2C2
+             gpio_bank_dummy_i2c2,
+`else
+             gpio[5:4],
+`endif
+`ifdef WITH_SPI2
+             gpio_bank_dummy_spi2
+`else
+             gpio[3:0]
+`endif
+             })
       );
 
-`ifdef WITH_SPI2_I2C2
-   // Tools > Extra SPI/I2C: Enabled. A second SPI and I2C port, reusing
-   // this project's own proven spi_master.v/od_gpio2.v modules exactly as
-   // the first ports do, wired directly onto GPIO0-5 instead of a
-   // dedicated bus (this board has only one hardware SPI/I2C-capable bus,
-   // the microSD slot's pins, already used by the first SPI/I2C above).
+`ifdef WITH_SPI2
+   // Tools > SPI Buses: Two. A second SPI port, reusing this project's own
+   // proven spi_master.v module exactly as the first port does, wired
+   // directly onto GPIO0-3 instead of a dedicated bus (this board has only
+   // one hardware SPI-capable bus, the microSD slot's pins, already used
+   // by the first SPI port above).
    spi_master spi2
      (
       .clk(clk_sys),
@@ -530,7 +576,11 @@ module top
       .spi_miso(gpio[2]),
       .spi_cs_n(gpio[3])
       );
+`endif
 
+`ifdef WITH_I2C2
+   // Tools > I2C Buses: Two - same rationale as WITH_SPI2 above, wired
+   // onto GPIO4-5 instead.
    od_gpio2 i2c2
      (
       .clk(clk_sys),

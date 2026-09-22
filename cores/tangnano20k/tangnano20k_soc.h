@@ -34,9 +34,9 @@
 #define TANGNANO20K_SPI_DAT_REG  (*(volatile uint32_t *)0x80000088UL)
 #define TANGNANO20K_I2C_REG      (*(volatile uint32_t *)0x80000090UL)
 
-/* Second SPI/I2C port (Tools > Extra SPI/I2C, disabled by default) - same
- * register layout as the first, on GPIO0-5 instead of the microSD slot's
- * bus pins. See docs/PERIPHERALS.md. */
+/* Second SPI/I2C port (Tools > SPI Buses / I2C Buses: Two, not the
+ * default) - same register layout as the first, on GPIO0-3 (SPI2)/GPIO4-5
+ * (I2C2) instead of the microSD slot's bus pins. See docs/PERIPHERALS.md. */
 #define TANGNANO20K_SPI2_DIV_REG (*(volatile uint32_t *)0x800000A0UL)
 #define TANGNANO20K_SPI2_CS_REG  (*(volatile uint32_t *)0x800000A4UL)
 #define TANGNANO20K_SPI2_DAT_REG (*(volatile uint32_t *)0x800000A8UL)

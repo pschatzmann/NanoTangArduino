@@ -147,17 +147,21 @@ than reprogramming the whole bitstream.
 | SRAM (default) | `:boot_mode=sram` |
 | Flash | `:boot_mode=flash` |
 
-### Extra SPI/I2C
+### SPI Buses / I2C Buses
 
 See [Peripherals: SPI, I2C (Wire), and the SD card](PERIPHERALS.md#a-second-spi--i2c-port).
-**Disabled by default** - enabling it adds a second SPI + I2C port
-(`SPI2`/`Wire2`) on GPIO0-5, removing those 6 pins from the
-general-purpose GPIO pool.
+Independent menus, each defaulting to **One** - the original,
+always-present primary port. **None** removes that port's gateware
+entirely (saves LUTs; `SPI`/`Wire`, and anything built on them like `SD`,
+silently read back 0/no-op instead of hanging). **Two** adds a second,
+independent port (`SPI2` on GPIO0-3, `Wire2` on GPIO4-5), removing those
+pins from the general-purpose GPIO pool.
 
 | Option | FQBN suffix |
 |---|---|
-| Disabled (default) | `:spi2_i2c2=disabled` |
-| Enabled | `:spi2_i2c2=enabled` |
+| None | `:spi_buses=none` / `:i2c_buses=none` |
+| One (default) | `:spi_buses=one` / `:i2c_buses=one` |
+| Two | `:spi_buses=two` / `:i2c_buses=two` |
 
 ### Hardware Multiply/Divide
 

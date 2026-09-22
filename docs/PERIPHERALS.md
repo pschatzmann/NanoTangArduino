@@ -138,8 +138,8 @@ in the background rather than assuming more is always imminent.
   [audio example](https://github.com/sipeed/TangNano-20K-example/tree/main/audio).
   See `examples/I2SToneTest`.
 - **Receive**: select **Tools > I2S Input: Enabled** (disabled by
-  default, same real GPIO-pin cost/opt-in pattern as
-  [Extra SPI/I2C](#a-second-spi--i2c-port)) and wire an external I2S
+  default, same real GPIO-pin cost/opt-in pattern as a
+  [second SPI/I2C port](#a-second-spi--i2c-port)) and wire an external I2S
   microphone's data-out line to `GPIO6`, sharing the same `WS`/`BCLK`
   lines the onboard amplifier uses - this is a synthesis-time decision
   (it removes `GPIO6` from the general-purpose GPIO pool in the
@@ -149,42 +149,90 @@ in the background rather than assuming more is always imminent.
 - **Duplex**: see above - `examples/I2SDuplexTest` passes each captured
   frame straight back out to the amplifier.
 
+| Object | Menu | Function | Pin printed on the device |
+|---|---|---|---|
+| `I2S` | always present | PA_EN | 51 |
+| `I2S` | always present | DIN | 54 |
+| `I2S` | always present | WS | 55 |
+| `I2S` | always present | BCLK | 56 |
+| `I2S` | Tools > I2S Input: Enabled | RX_DIN | 25 (`GPIO6`) |
+
+Pin numbers are the same physical FPGA pin numbers used throughout this
+page (sourced from the official datasheet's pinout table - see
+[General GPIO](#general-gpio)); `RX_DIN` doubles as `GPIO6` when Tools >
+I2S Input is left at its default, Disabled.
+
 The exact bit alignment of the frame follows the Philips/I2S convention but
 is unverified on real hardware and may need a one-`BCLK` tweak.
 
 ## SPI, I2C (`Wire`), and the SD card
 
-All three **share the onboard microSD card slot's bus pins** — use at most
-one of them at a time. This was a deliberate tradeoff: those are the only
-pins on this board I could confirm the exact FPGA pin numbers for from
-Sipeed's schematic without risking an unsafe guess (see
-[Known limitations](KNOWN_LIMITATIONS.md)).
+The primary SPI and I2C **share the onboard microSD card slot's bus
+pins** — use at most one of them at a time. This was a deliberate
+tradeoff: those are the only pins on this board I could confirm the exact
+FPGA pin numbers for from Sipeed's schematic without risking an unsafe
+guess (see [Known limitations](KNOWN_LIMITATIONS.md)).
+
+Both are present by default but independently configurable via
+**Tools > SPI Buses** / **Tools > I2C Buses** (0/1/2 each - see
+[Tools menus](BUILDING.md#tools-menus)):
+
+- **None**: removes that port's gateware entirely to save LUTs. `SPI`/
+  `Wire` (and anything built on them, e.g. `SD`) then silently read back
+  0/no-op instead of talking to real hardware - the same "claim the
+  address, answer with 0" pattern this core uses for every other
+  menu-gated peripheral, rather than hanging.
+- **One** (Recommended, the default): the original, always-present
+  primary port, unchanged from every prior version of this core.
+- **Two**: adds a second, independent port on general-purpose GPIO - see
+  below.
 
 - **SPI** (`#include <SPI.h>`, `libraries/SPI/`, backed by
   `gateware/src/spi_master.v`): a real hardware shift register, mode 0
-  only, MSB-first. Wiring matches standard SD-over-SPI: `SCLK`=83,
-  `MOSI`=82, `MISO`=84, `CS`=81 (physical FPGA pin numbers). There's a
-  single fixed CS line asserted for the duration of
-  `beginTransaction()`/`endTransaction()`, not a general-purpose CS pin —
-  only one SPI device at a time. See `examples/SPITransfer`.
+  only, MSB-first. There's a single fixed CS line asserted for the
+  duration of `beginTransaction()`/`endTransaction()`, not a
+  general-purpose CS pin — only one SPI device at a time. See
+  `examples/SPITransfer`.
 - **I2C** (`#include <Wire.h>`, `libraries/Wire/`, backed by
   `gateware/src/od_gpio2.v`): bit-banged in software over an open-drain
   SDA/SCL pair (internal pull-ups enabled in the `.cst`), master mode
-  only. `SDA`=85, `SCL`=80. See `examples/I2CScanner`.
+  only. See `examples/I2CScanner`.
+
+| Object | Menu | Function | Pin printed on the device |
+|---|---|---|---|
+| `SPI` | Tools > SPI Buses: One+ | SCLK | 83 |
+| `SPI` | Tools > SPI Buses: One+ | MOSI | 82 |
+| `SPI` | Tools > SPI Buses: One+ | MISO | 84 |
+| `SPI` | Tools > SPI Buses: One+ | CS | 81 |
+| `SPI2` | Tools > SPI Buses: Two | SCLK | 73 (`GPIO0`) |
+| `SPI2` | Tools > SPI Buses: Two | MOSI | 74 (`GPIO1`) |
+| `SPI2` | Tools > SPI Buses: Two | MISO | 75 (`GPIO2`) |
+| `SPI2` | Tools > SPI Buses: Two | CS | 77 (`GPIO3`) |
+| `Wire` | Tools > I2C Buses: One+ | SDA | 85 |
+| `Wire` | Tools > I2C Buses: One+ | SCL | 80 |
+| `Wire2` | Tools > I2C Buses: Two | SDA | 27 (`GPIO4`) |
+| `Wire2` | Tools > I2C Buses: Two | SCL | 28 (`GPIO5`) |
+
+Pin numbers are the same physical FPGA pin numbers used throughout this
+page (sourced from the official datasheet's pinout table - see
+[General GPIO](#general-gpio)); `SPI2`/`Wire2`'s pins double as
+`GPIO0`-`GPIO5` when Tools > SPI/I2C Buses is left at the default **One**
+instead.
 
 ### A second SPI + I2C port
 
-Select **Tools > Extra SPI/I2C: Enabled** (disabled by default) for a
-second, fully independent SPI and I2C port - `SPI2`/`Wire2`, same
-`TangNanoSPIClass`/`TwoWire` API as the first port, backed by a second
-instance of the same `spi_master.v`/`od_gpio2.v` gateware. This board has
-only one dedicated SPI/I2C-capable bus (the microSD slot's pins used
-above), so the second port runs on general-purpose GPIO instead:
-`SPI2` = `SCLK`=GPIO0, `MOSI`=GPIO1, `MISO`=GPIO2, `CS`=GPIO3; `Wire2` =
-`SDA`=GPIO4, `SCL`=GPIO5. Enabling this menu permanently removes GPIO0-5
-from the general-purpose GPIO pool (see [General GPIO](#general-gpio)) -
-same tradeoff as AI Accelerator's LUT/BRAM cost, but for GPIO pins
-instead. See `examples/ExtraSPII2CTest`.
+Select **Tools > SPI Buses: Two** and/or **Tools > I2C Buses: Two**
+(independent of each other - they use non-overlapping pins, unlike what a
+single combined "Extra SPI/I2C" toggle used to imply) for a second, fully
+independent SPI and/or I2C port - `SPI2`/`Wire2` (see the table above),
+same `TangNanoSPIClass`/`TwoWire` API as the first port, backed by a
+second instance of the same `spi_master.v`/`od_gpio2.v` gateware. This
+board has only one dedicated SPI/I2C-capable bus (the microSD slot's pins
+used above), so the second port runs on general-purpose GPIO instead.
+Selecting **Two** permanently removes those specific GPIO pins (0-3 for
+SPI, 4-5 for I2C) from the general-purpose GPIO pool (see
+[General GPIO](#general-gpio)) - same tradeoff as AI Accelerator's
+LUT/BRAM cost, but for GPIO pins instead. See `examples/ExtraSPII2CTest`.
 
 ### SD card
 
@@ -504,7 +552,7 @@ The output frequency is selectable via **Tools > Clock Speed**:
 | --- | --- | --- |
 | Normal (Recommended) | 27 MHz | Original, unchanged clock this core has always shipped with |
 | Low Power | 13.5 MHz | Roughly half the dynamic power/heat/EMI; proportionally slower UART/I2S/WS2812 timing and sketch execution |
-| Overclocked | 54 MHz | Verified against this design's synthesized timing (~75MHz closing frequency with default menu settings) and against `sdram.v`'s documented 66.7MHz SDRAM timing ceiling — both leave real margin. Enabling other gateware-cost menu options (AI Accelerator, Extra SPI/I2C, I2S Input) alongside this adds logic that may lower the design's actual closing frequency |
+| Overclocked | 54 MHz | Verified against this design's synthesized timing (~75MHz closing frequency with default menu settings) and against `sdram.v`'s documented 66.7MHz SDRAM timing ceiling — both leave real margin. Enabling other gateware-cost menu options (AI Accelerator, SPI/I2C Buses: Two, I2S Input) alongside this adds logic that may lower the design's actual closing frequency |
 
 Every option regenerates both the PLL's dividers (`gowin_rpll_sys.v`) and
 `sys_parameters.v`'s `CLK_FREQ` together (see `tools/build_bitstream.py`),
