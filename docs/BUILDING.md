@@ -30,7 +30,7 @@ under Arduino IDE's Preferences > "Additional Boards Manager URLs" (or
 `arduino-cli`'s `--additional-urls`):
 
 ```
-https://raw.githubusercontent.com/pschatzmann/arduino-nanotang/main/package_nanotang_index.json
+https://raw.githubusercontent.com/pschatzmann/arduino-nanotang/master/package_nanotang_index.json
 ```
 
 Then install `nanotang:tangnano20k` from Boards Manager (IDE) or:

@@ -64,10 +64,12 @@
  * with using the microSD slot. See docs/PERIPHERALS.md.
  *
  * The system clock is derived from the board's fixed 27MHz oscillator via
- * an on-chip PLL (Gowin_rPLL_sys, ~26.845MHz output - see sys_parameters.v)
- * rather than the external clock-generator-chip trick earlier versions of
- * this core used; no one-time board setup is needed any more. The PLL's
- * phase-shifted second output clocks the embedded SDRAM (sdram_bus.v).
+ * an on-chip PLL (Gowin_rPLL_sys - see sys_parameters.v), rather than the
+ * external clock-generator-chip trick earlier versions of this core used;
+ * no one-time board setup is needed any more. Output frequency (27MHz by
+ * default) is selected by the Tools > Clock Speed board menu - see
+ * boards.txt. The PLL's phase-shifted second output clocks the embedded
+ * SDRAM (sdram_bus.v).
  *
  * The picorv32 core has a very simple memory interface; see
  * https://github.com/YosysHQ/picorv32

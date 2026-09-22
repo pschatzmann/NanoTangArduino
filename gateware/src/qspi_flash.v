@@ -29,7 +29,7 @@
 
 module qspi_flash
   #(
-    parameter CLK_DIV = 3 // SCLK ~= clk/8 (~3.3MHz at this SoC's ~26.845MHz) - well under any SPI NOR flash's Read Data command's max clock; correctness over speed since this isn't on the instruction-fetch path.
+    parameter CLK_DIV = 3 // SCLK ~= clk/8 (~3.4MHz at this SoC's default 27MHz, scaling with the Tools > Clock Speed menu) - well under any SPI NOR flash's Read Data command's max clock; correctness over speed since this isn't on the instruction-fetch path.
     )
    (
     input wire         clk,

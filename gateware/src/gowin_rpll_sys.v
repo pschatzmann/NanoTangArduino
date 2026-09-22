@@ -8,10 +8,11 @@
 // Vendored from sipeed/TangNano-20K-example (nestang/src/gowin_rpll_nes),
 // renamed Gowin_rPLL_sys, for the NanoTangArduino core's system clock.
 // This is plain Gowin IP-Core-Generator boilerplate (not proprietary/
-// encrypted), reused with its proven 27MHz -> 26.845MHz configuration:
-// clkout drives the whole SoC (replacing the old 20MHz external-clock-chip
-// setup), clkoutp is the same frequency phase-shifted 180 degrees for the
-// embedded SDRAM's clock pin (gateware/src/sdram.v).
+// encrypted). clkout drives the whole SoC (replacing the old 20MHz
+// external-clock-chip setup), clkoutp is the same frequency phase-shifted
+// 180 degrees for the embedded SDRAM's clock pin (gateware/src/sdram.v).
+// The actual output frequency is selected by the Tools > Clock Speed board
+// menu (PLL_IDIV_SEL/PLL_FBDIV_SEL/PLL_ODIV_SEL below) - see boards.txt.
 
 module Gowin_rPLL_sys (clkout, clkoutp, lock, reset, clkin);
 
@@ -45,12 +46,29 @@ rPLL rpll_inst (
     .FDLY({gw_gnd,gw_gnd,gw_gnd,gw_gnd})
 );
 
-// 27 -> 26.845 Mhz (proven config from nestang; matches sdram.v's default
-// FREQ assumption closely enough for its timing parameters at CAS=2).
+// 27 -> 27 Mhz by default (IDIV_SEL/FBDIV_SEL/ODIV_SEL below matches the
+// "proven config from nestang" this was vendored with). Overridden per the
+// Tools > Clock Speed board menu (see boards.txt/build_bitstream.py) via
+// -DPLL_IDIV_SEL/-DPLL_FBDIV_SEL/-DPLL_ODIV_SEL - each combination computed
+// with apio/apycula's gowin_pll calculator against this exact part
+// (GW2AR-18C), not hand-derived, since the VCO (IDIV/FBDIV ratio) and
+// output (ODIV) must both land on values the PLL hardware actually
+// supports. Must be kept in step with sys_parameters.v's CLK_FREQ, which
+// top.v feeds to sdram_bus.v/ws2812b_tgt.v for their own FREQ-derived
+// timing - see build_bitstream.py.
+`ifndef PLL_IDIV_SEL
+`define PLL_IDIV_SEL 0
+`endif
+`ifndef PLL_FBDIV_SEL
+`define PLL_FBDIV_SEL 0
+`endif
+`ifndef PLL_ODIV_SEL
+`define PLL_ODIV_SEL 32
+`endif
 defparam rpll_inst.FCLKIN = "27";
-defparam rpll_inst.IDIV_SEL = 0;
-defparam rpll_inst.FBDIV_SEL = 0;
-defparam rpll_inst.ODIV_SEL = 32;
+defparam rpll_inst.IDIV_SEL = `PLL_IDIV_SEL;
+defparam rpll_inst.FBDIV_SEL = `PLL_FBDIV_SEL;
+defparam rpll_inst.ODIV_SEL = `PLL_ODIV_SEL;
 
 defparam rpll_inst.DYN_IDIV_SEL = "false";
 defparam rpll_inst.DYN_FBDIV_SEL = "false";

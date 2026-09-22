@@ -48,8 +48,10 @@
   link-time distance, breaking the "identical core image" property this
   caching depends on.
 - **`millis()`/`micros()` wrap much sooner than a real Arduino board.**
-  `systick` is a raw ~26.845MHz cycle counter, so it wraps roughly every
-  160 seconds, versus ~49 days on AVR. Code that compares
+  `systick` is a raw cycle counter at whatever the Tools > Clock Speed menu
+  selects (27MHz by default), so it wraps roughly every 160 seconds at
+  27MHz (faster at Overclocked, slower at Low Power), versus ~49 days on
+  AVR. Code that compares
   `millis()`/`micros()` with unsigned subtraction (the standard Arduino
   idiom, e.g. `if (millis() - last >= interval)`) is unaffected by wrapping
   at any period.

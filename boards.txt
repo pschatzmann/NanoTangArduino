@@ -7,6 +7,7 @@ menu.boot_mode=Boot Mode
 menu.spi2_i2c2=Extra SPI/I2C
 menu.hw_muldiv=Hardware Multiply/Divide
 menu.i2s_rx=I2S Input
+menu.f_cpu=Clock Speed
 
 ## Sipeed Tang Nano 20K (PicoRV32 soft-SoC)
 ## ------------------------------------------
@@ -15,7 +16,6 @@ tangnano20k.name=Tang Nano 20K (PicoRV32 SoC)
 tangnano20k.build.core=tangnano20k
 tangnano20k.build.variant=tangnano20k
 tangnano20k.build.mcu=picorv32
-tangnano20k.build.f_cpu=26845000L
 tangnano20k.build.board=TANGNANO20K
 tangnano20k.build.march=rv32i2p0
 tangnano20k.build.mabi=ilp32
@@ -135,3 +135,49 @@ tangnano20k.menu.i2s_rx.disabled=Disabled (Recommended)
 tangnano20k.menu.i2s_rx.disabled.build.i2s_rx=0
 tangnano20k.menu.i2s_rx.enabled=Enabled
 tangnano20k.menu.i2s_rx.enabled.build.i2s_rx=1
+
+# Tools > Clock Speed. Unlike every other menu on this board, this isn't a
+# software flag - it reconfigures the PLL that clocks the entire SoC
+# (gateware/src/gowin_rpll_sys.v) and, in lockstep, sys_parameters.v's
+# CLK_FREQ (which top.v feeds to the SDRAM controller and WS2812 driver for
+# their own FREQ-derived timing - see tools/build_bitstream.py). Each
+# option's IDIV_SEL/FBDIV_SEL/ODIV_SEL was computed for this exact part
+# (GW2AR-18C) with apycula's gowin_pll calculator, not hand-derived, since
+# only specific divider combinations are valid PLL configurations - do not
+# edit these numbers without recomputing them the same way.
+#
+# Normal (27MHz) is the original, unchanged clock this core has always
+# shipped with (IDIV_SEL=0/FBDIV_SEL=0/ODIV_SEL=32 - actually a clean
+# pass-through of the 27MHz oscillator, not a real multiply/divide).
+#
+# Low Power (13.5MHz) roughly halves dynamic power/heat/EMI at the cost of
+# proportionally slower UART/I2S/WS2812 timing and sketch execution speed -
+# still comfortably within every peripheral's timing margin.
+#
+# Overclocked (54MHz) was verified against this design's actual synthesized
+# timing (yosys -> nextpnr-himbaechel), whose static timing analysis
+# reports this specific core closing at ~75MHz with default menu settings
+# (AI Accelerator/Extra SPI/I2C/I2S Input disabled) - 54MHz leaves real
+# margin under that ceiling. It's also comfortably under sdram.v's own
+# documented 66.7MHz ceiling for its current CAS/T_xx timing parameters.
+# Enabling other gateware-cost menu options alongside this may add logic
+# that lowers the design's actual closing frequency - re-verify timing if
+# you combine them.
+tangnano20k.menu.f_cpu.normal=Normal (27 MHz) (Recommended)
+tangnano20k.menu.f_cpu.normal.build.f_cpu=27000000L
+tangnano20k.menu.f_cpu.normal.build.clk_freq_hz=27000000
+tangnano20k.menu.f_cpu.normal.build.pll_idiv=0
+tangnano20k.menu.f_cpu.normal.build.pll_fbdiv=0
+tangnano20k.menu.f_cpu.normal.build.pll_odiv=32
+tangnano20k.menu.f_cpu.low_power=Low Power (13.5 MHz)
+tangnano20k.menu.f_cpu.low_power.build.f_cpu=13500000L
+tangnano20k.menu.f_cpu.low_power.build.clk_freq_hz=13500000
+tangnano20k.menu.f_cpu.low_power.build.pll_idiv=1
+tangnano20k.menu.f_cpu.low_power.build.pll_fbdiv=0
+tangnano20k.menu.f_cpu.low_power.build.pll_odiv=48
+tangnano20k.menu.f_cpu.overclock=Overclocked (54 MHz)
+tangnano20k.menu.f_cpu.overclock.build.f_cpu=54000000L
+tangnano20k.menu.f_cpu.overclock.build.clk_freq_hz=54000000
+tangnano20k.menu.f_cpu.overclock.build.pll_idiv=0
+tangnano20k.menu.f_cpu.overclock.build.pll_fbdiv=1
+tangnano20k.menu.f_cpu.overclock.build.pll_odiv=16

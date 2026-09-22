@@ -23,7 +23,7 @@
 
 module sdram_bus
   #(
-    parameter FREQ = 26_845_000
+    parameter FREQ = 27_000_000
     )
   (
    input wire         clk,

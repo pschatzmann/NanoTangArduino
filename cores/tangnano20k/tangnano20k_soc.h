@@ -5,11 +5,15 @@
 
 #include <stdint.h>
 
-/* Must match gateware/src/sys_parameters.v's CLK_FREQ (~26.845MHz, derived
- * from the board's fixed 27MHz oscillator via Gowin_rPLL_sys - see
- * top.v). Getting this wrong silently skews every timing derived from it:
- * UART baud rate, I2S sample rate, SPI clock, and millis()/micros(). */
-#define TANGNANO20K_CLK_FREQ 26845000UL
+/* Must match gateware/src/sys_parameters.v's CLK_FREQ, derived from the
+ * board's fixed 27MHz oscillator via Gowin_rPLL_sys - see top.v. Getting
+ * this wrong silently skews every timing derived from it: UART baud rate,
+ * I2S sample rate, SPI clock, and millis()/micros(). Driven by the Tools >
+ * Clock Speed board menu via F_CPU (see platform.txt/boards.txt), which
+ * sets build.f_cpu and build.clk_freq_hz from the same menu choice in
+ * lockstep - so this always matches whatever clk_freq_hz was actually
+ * synthesized into the gateware. */
+#define TANGNANO20K_CLK_FREQ F_CPU
 
 #define TANGNANO20K_LED_REG      (*(volatile uint32_t *)0x80000000UL)
 #define TANGNANO20K_UART_DIV_REG (*(volatile uint32_t *)0x80000008UL)

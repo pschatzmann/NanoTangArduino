@@ -69,6 +69,19 @@ build.hw_muldiv=0
 # docs/PERIPHERALS.md "Audio (I2S)".
 build.i2s_rx=0
 
+# Overridden by the Tools > Clock Speed board menu (see boards.txt), which
+# also overrides build.f_cpu in lockstep - all four move together, same
+# pattern as Hardware Multiply/Divide's build.march/build.libgcc_path,
+# since clk_freq_hz/pll_idiv/pll_fbdiv/pll_odiv describe one single PLL
+# configuration and build.f_cpu must match what it actually produces (see
+# tools/build_bitstream.py). Defaults here are Normal (27MHz) - the
+# original fixed clock this core shipped with.
+build.f_cpu=27000000L
+build.clk_freq_hz=27000000
+build.pll_idiv=0
+build.pll_fbdiv=0
+build.pll_odiv=32
+
 compiler.c.cmd={compiler.prefix}gcc
 compiler.c.flags=-c {build.optimization_flags} -ffunction-sections -fdata-sections -march={compiler.march} -mabi={compiler.mabi} -nostdlib -nostartfiles -std=gnu11 {compiler.warning_flags} {build.defines}
 
@@ -145,7 +158,7 @@ recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.f
 # build (bake the program into SRAM init files, then yosys -> nextpnr ->
 # gowin_pack). Expect this to take noticeably longer than a normal
 # Arduino "compile" step - see docs/BUILDING.md.
-recipe.objcopy.hex.pattern=python3 "{runtime.platform.path}/tools/build_bitstream.py" "{build.path}/{build.project_name}.elf" "{compiler.path}{compiler.objcopy.cmd}" "{build.path}/fpga" "{build.ai_accel}" "{build.boot_flash}" "{build.spi2_i2c2}" "{build.hw_muldiv}" "{build.i2s_rx}"
+recipe.objcopy.hex.pattern=python3 "{runtime.platform.path}/tools/build_bitstream.py" "{build.path}/{build.project_name}.elf" "{compiler.path}{compiler.objcopy.cmd}" "{build.path}/fpga" "{build.ai_accel}" "{build.boot_flash}" "{build.spi2_i2c2}" "{build.hw_muldiv}" "{build.i2s_rx}" "{build.clk_freq_hz}" "{build.pll_idiv}" "{build.pll_fbdiv}" "{build.pll_odiv}"
 
 recipe.size.pattern="{compiler.path}{compiler.size.cmd}" -A "{build.path}/{build.project_name}.elf"
 

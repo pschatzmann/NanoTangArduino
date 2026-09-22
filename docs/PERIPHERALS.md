@@ -70,7 +70,7 @@ vendored unmodified from
 [grughuhler/picorv32_tang_nano_20k](https://github.com/grughuhler/picorv32_tang_nano_20k)
 (BSD-2-Clause) - a real hardware shift-timer, not software bit-banging,
 since WS2812's protocol needs ~400ns-precision pulses well beyond what's
-reliably achievable in C at this core's ~26.845MHz. See
+reliably achievable in C at this core's default 27MHz. See
 `examples/WS2812Rainbow`.
 
 ## Audio (I2S)
@@ -494,7 +494,20 @@ bitstream built without this enabled.
 ## Clock architecture
 
 The system clock is derived from the board's fixed 27MHz oscillator (pin
-4) through an on-chip PLL (`Gowin_rPLL_sys`, ~26.845MHz output, vendored
-from `nestang`'s proven configuration) — **no one-time board setup is
-needed**. The PLL's phase-shifted second output clocks the embedded
-SDRAM.
+4) through an on-chip PLL (`Gowin_rPLL_sys`, vendored from `nestang`'s
+configuration) — **no one-time board setup is needed**. The PLL's
+phase-shifted second output clocks the embedded SDRAM.
+
+The output frequency is selectable via **Tools > Clock Speed**:
+
+| Option | Frequency | Notes |
+| --- | --- | --- |
+| Normal (Recommended) | 27 MHz | Original, unchanged clock this core has always shipped with |
+| Low Power | 13.5 MHz | Roughly half the dynamic power/heat/EMI; proportionally slower UART/I2S/WS2812 timing and sketch execution |
+| Overclocked | 54 MHz | Verified against this design's synthesized timing (~75MHz closing frequency with default menu settings) and against `sdram.v`'s documented 66.7MHz SDRAM timing ceiling — both leave real margin. Enabling other gateware-cost menu options (AI Accelerator, Extra SPI/I2C, I2S Input) alongside this adds logic that may lower the design's actual closing frequency |
+
+Every option regenerates both the PLL's dividers (`gowin_rpll_sys.v`) and
+`sys_parameters.v`'s `CLK_FREQ` together (see `tools/build_bitstream.py`),
+so UART baud rate, I2S sample rate, SPI clock, `millis()`/`micros()`, and
+the SDRAM/WS2812 timing derived from `CLK_FREQ` in `top.v` all stay
+consistent with whichever frequency is selected.

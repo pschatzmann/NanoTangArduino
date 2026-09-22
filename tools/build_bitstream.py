@@ -3,7 +3,7 @@
 a program into the gateware's SRAM initialization files and running the
 open-source FPGA flow (yosys -> nextpnr-himbaechel -> gowin_pack).
 
-Usage: build_bitstream.py <prog.elf> <objcopy> <build_dir> [ai_accel] [boot_flash] [spi2_i2c2] [hw_muldiv] [i2s_rx]
+Usage: build_bitstream.py <prog.elf> <objcopy> <build_dir> [ai_accel] [boot_flash] [spi2_i2c2] [hw_muldiv] [i2s_rx] [clk_freq_hz] [pll_idiv] [pll_fbdiv] [pll_odiv]
 
 ai_accel: "1" to synthesize the AI accelerator (gateware/src/ai_accel_bus.v
 and friends, integrated from NanoTangAI) into the bitstream, per the
@@ -68,6 +68,22 @@ microphone sharing the onboard MAX98357A's BCLK/WS lines; "0" (default)
 leaves GPIO6 as plain GPIO and I2S.read() always reads back zero
 immediately. Same real GPIO-pin cost as spi2_i2c2, gated the same way -
 see gateware/src/i2s.v and docs/PERIPHERALS.md "Audio (I2S)".
+
+clk_freq_hz/pll_idiv/pll_fbdiv/pll_odiv: driven together by the Tools >
+Clock Speed board menu (Normal 27MHz / Low Power 13.5MHz / Overclocked
+54MHz, default Normal). clk_freq_hz becomes gowin_rpll_sys.v's actual PLL
+output and sys_parameters.v's CLK_FREQ (which top.v feeds to
+sdram_bus.v/ws2812b_tgt.v for their own FREQ-derived timing); pll_idiv/
+pll_fbdiv/pll_odiv are the exact IDIV_SEL/FBDIV_SEL/ODIV_SEL divider values
+that produce it from the board's 27MHz oscillator - computed per option
+with apycula's gowin_pll calculator against this exact part (GW2AR-18C),
+not derived at build time, since only certain divider combinations are
+valid PLL configurations. All four MUST move together (a clk_freq_hz that
+doesn't match what the given dividers actually produce would desync
+software baud-rate/timing math in build.f_cpu from the gateware's real
+clock) - boards.txt drives all four from the one menu choice, same pattern
+as hw_muldiv's build.march/build.libgcc_path. Defaults (27000000/0/0/32)
+match the original fixed, non-configurable clock this core shipped with.
 """
 import hashlib
 import shutil
@@ -120,7 +136,8 @@ def run(cmd, **kwargs):
     subprocess.run(cmd, check=True, **kwargs)
 
 
-def core_bitstream_cache_key(boot_image_path, ai_accel, spi2_i2c2, hw_muldiv, i2s_rx):
+def core_bitstream_cache_key(boot_image_path, ai_accel, spi2_i2c2, hw_muldiv, i2s_rx,
+                              clk_freq_hz, pll_idiv, pll_fbdiv, pll_odiv):
     """Hashes everything that can affect a Boot Mode: Flash core bitstream,
     independent of sketch content: the fixed core image (irq_vec.S/boot.S,
     the only trace of those build_bitstream.py otherwise never reads),
@@ -131,12 +148,16 @@ def core_bitstream_cache_key(boot_image_path, ai_accel, spi2_i2c2, hw_muldiv, i2
     for name in GATEWARE_SOURCES + ["sys_parameters.v"]:
         h.update((GATEWARE_SRC / name).read_bytes())
     h.update(CST_FILE.read_bytes())
-    h.update(f"ai_accel={int(ai_accel)},spi2_i2c2={int(spi2_i2c2)},hw_muldiv={int(hw_muldiv)},i2s_rx={int(i2s_rx)}".encode())
+    h.update(
+        f"ai_accel={int(ai_accel)},spi2_i2c2={int(spi2_i2c2)},hw_muldiv={int(hw_muldiv)},"
+        f"i2s_rx={int(i2s_rx)},clk_freq_hz={clk_freq_hz},pll_idiv={pll_idiv},"
+        f"pll_fbdiv={pll_fbdiv},pll_odiv={pll_odiv}".encode()
+    )
     return h.hexdigest()
 
 
 def main():
-    if len(sys.argv) not in (4, 5, 6, 7, 8, 9):
+    if len(sys.argv) not in (4, 5, 6, 7, 8, 9, 10, 11, 12, 13):
         sys.stderr.write(__doc__)
         return 1
 
@@ -145,7 +166,13 @@ def main():
     boot_flash = len(sys.argv) >= 6 and sys.argv[5] == "1"
     spi2_i2c2 = len(sys.argv) >= 7 and sys.argv[6] == "1"
     hw_muldiv = len(sys.argv) >= 8 and sys.argv[7] == "1"
-    i2s_rx = len(sys.argv) == 9 and sys.argv[8] == "1"
+    i2s_rx = len(sys.argv) >= 9 and sys.argv[8] == "1"
+    # Clock Speed menu: all four move together (see the docstring above) -
+    # default to the original fixed 27MHz/0/0/32 config if not given.
+    clk_freq_hz = int(sys.argv[9]) if len(sys.argv) >= 10 else 27_000_000
+    pll_idiv = int(sys.argv[10]) if len(sys.argv) >= 11 else 0
+    pll_fbdiv = int(sys.argv[11]) if len(sys.argv) >= 12 else 0
+    pll_odiv = int(sys.argv[12]) if len(sys.argv) >= 13 else 32
     build_dir.mkdir(parents=True, exist_ok=True)
 
     # FLASH_DATA payload, independent of boot_flash - empty (0 bytes) if the
@@ -178,7 +205,8 @@ def main():
             str(elf_path), str(prog_flash_path),
         ])
 
-        cache_key = core_bitstream_cache_key(bin_path, ai_accel, spi2_i2c2, hw_muldiv, i2s_rx)
+        cache_key = core_bitstream_cache_key(bin_path, ai_accel, spi2_i2c2, hw_muldiv, i2s_rx,
+                                              clk_freq_hz, pll_idiv, pll_fbdiv, pll_odiv)
         cached_fs = CACHE_DIR / f"{cache_key}.fs"
         fs_path = build_dir / "prog.fs"
         if cached_fs.exists():
@@ -220,6 +248,13 @@ def main():
         defines.append("-DWITH_HW_MULDIV")
     if i2s_rx:
         defines.append("-DWITH_I2S_RX")
+    # Clock Speed menu - always passed explicitly (rather than relying on
+    # the Verilog `ifndef defaults) so the PLL dividers and CLK_FREQ can
+    # never drift out of step with each other.
+    defines.append(f"-DCLK_FREQ_HZ={clk_freq_hz}")
+    defines.append(f"-DPLL_IDIV_SEL={pll_idiv}")
+    defines.append(f"-DPLL_FBDIV_SEL={pll_fbdiv}")
+    defines.append(f"-DPLL_ODIV_SEL={pll_odiv}")
     define = "read_verilog " + " ".join(defines) if defines else "read_verilog"
     json_path = build_dir / "top.json"
     run([
