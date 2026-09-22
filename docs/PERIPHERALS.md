@@ -252,8 +252,15 @@ lanes, up to 16 taps) - but integrated directly onto this core's own
 picorv32 bus (`gateware/src/ai_accel_bus.v`) instead of going through
 NanoTangAI's original external SPI link to a *second* Tang Nano 20K board.
 `gateware/src/dot_product_engine.v`, `dot_product_lane_array.v`,
-`int8_mac_lane.v`, and `byte_interleave_ram.v` are vendored unmodified
-from that project.
+`int8_mac_lane.v`, and `byte_interleave_ram.v` are vendored from that
+project, with one deliberate deviation: `dot_product_engine.v`'s
+`result_mem` array carries an added `(* ram_style = "block" *)`
+attribute, the same BRAM-inference fix `gateware/src/sram8bit.v` needed
+for the same reason (see [Known limitations](KNOWN_LIMITATIONS.md)) -
+without it, this always-instantiated-when-enabled 128-entry array maps
+onto distributed LUT logic instead of a BRAM block, a real cost that
+caused a `nextpnr-himbaechel` placement failure ("no BELs remaining")
+when combined with other LUT-hungry Tools menu options.
 
 The API is a simplified, instance-based take on NanoTangAI's
 `TangNanoAccelerator`: `AIAccelerator accel(cinPadded, k, rows);` sets

@@ -1,7 +1,14 @@
-// Vendored unmodified from ../../../NanoTangAI/gateware/rtl/dot_product_engine.v,
+// Vendored from ../../../NanoTangAI/gateware/rtl/dot_product_engine.v,
 // part of the AI accelerator integration - see docs/PERIPHERALS.md "AI accelerator".
 // License: Apache-2.0 (see that project's library.properties/README;
-// same author as this repo).
+// same author as this repo). One deliberate deviation from the vendored
+// original: a `(* ram_style = "block" *)` attribute on `result_mem` below
+// (see its own comment) - without it, yosys maps this 128-entry array
+// onto distributed LUT logic instead of a Gowin BRAM block, the same
+// BRAM-inference gap gateware/src/sram8bit.v needed the identical fix
+// for (see docs/KNOWN_LIMITATIONS.md) - confirmed as the actual cause of
+// a real `nextpnr-himbaechel` "no BELs remaining" placement failure when
+// Tools > AI Accelerator is combined with other LUT-hungry peripherals.
 //
 `timescale 1ns / 1ps
 //
@@ -164,7 +171,9 @@ module dot_product_engine #(
   // stale by one cycle relative to when S_MAC samples it.
   wire fsm_en = (state == S_LOAD);
 
-  // result memory: ROWS*MAX_K entries, indexed [row*MAX_K + tap]
+  // result memory: ROWS*MAX_K entries, indexed [row*MAX_K + tap].
+  // `ram_style = "block"` - see this file's header comment.
+  (* ram_style = "block" *)
   reg signed [31:0] result_mem [0:(ROWS*MAX_K)-1];
   assign result_rd_data = result_mem[result_rd_addr];
 

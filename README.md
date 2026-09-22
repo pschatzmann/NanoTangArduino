@@ -53,10 +53,7 @@ verified via `yosys`/`nextpnr-himbaechel` synthesis and place & route and
 
 ## Board specifications
 
-Per [Sipeed's official page](https://wiki.sipeed.com/hardware/en/tang/tang-nano-20k/nano-20k.html)
-and [schematic](https://dl.sipeed.com/shareURL/TANG/Nano_20K/2_Schematic)
-(confirmed against nextpnr's own device utilization report for this exact
-part - LUT4/DFF/BSRAM counts match):
+Per [Sipeed's official page](https://wiki.sipeed.com/hardware/en/tang/tang-nano-20k/nano-20k.html):
 
 | | |
 |---|---|
