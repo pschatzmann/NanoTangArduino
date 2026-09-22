@@ -56,6 +56,46 @@ sketch.ino ──arduino-cli/IDE──> RISC-V ELF (cores/tangnano20k + api/)
   (`vendor_arduino_api.sh`), and verification (`run_tests.sh`) scripts.
 - `boards.txt` / `platform.txt` — the Arduino board definition.
 
+## Preprocessor defines
+
+Set unconditionally by `build.defines` in [`platform.txt`](../platform.txt)
+for every sketch compiled against this board:
+
+| Define                  | Source                                              |
+|--------------------------|------------------------------------------------------|
+| `ARDUINO_TANGNANO20K`    | `-DARDUINO_{build.board}`, from `tangnano20k.build.board=TANGNANO20K` in [`boards.txt`](../boards.txt) |
+| `ARDUINO_ARCH_TANGNANO20K` | architecture-level define, always set alongside the board one |
+| `TANGNANO20K_SPI_COUNT`  | `0`, `1` (default), or `2` - mirrors **Tools > SPI Buses**' `build.spi_count`, see [A second SPI + I2C port](PERIPHERALS.md#a-second-spi--i2c-port) |
+| `TANGNANO20K_I2C_COUNT`  | `0`, `1` (default), or `2` - mirrors **Tools > I2C Buses**' `build.i2c_count`, same menu |
+
+Use `#ifdef ARDUINO_TANGNANO20K` to guard code specific to this board, e.g.:
+
+```cpp
+#ifdef ARDUINO_TANGNANO20K
+  // Tang Nano 20K-specific code
+#endif
+```
+
+`ARDUINO_ARCH_TANGNANO20K` is the broader check, for code that should apply
+to any board sharing this architecture, should one ever exist alongside
+the Tang Nano 20K.
+
+`TANGNANO20K_SPI_COUNT`/`TANGNANO20K_I2C_COUNT` let a sketch check at
+compile time whether `SPI2`/`Wire2` were actually built into the gateware,
+instead of silently talking to a port that reads back 0/no-ops:
+
+```cpp
+#if TANGNANO20K_I2C_COUNT >= 2
+  Wire2.begin();
+#else
+  #error "This sketch needs Tools > I2C Buses: Two"
+#endif
+```
+
+Also set when the corresponding `Tools >` menu option is enabled (see
+[boards.txt](../boards.txt)'s `menu.*` entries): `TANGNANO20K_SD_ENABLED`
+(SD card wiring).
+
 ## Memory map
 
 | Address                     | Peripheral                                        |

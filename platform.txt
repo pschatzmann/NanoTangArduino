@@ -29,7 +29,7 @@ compiler.mabi={build.mabi}
 # explicitly opt in, not just by typing #include <SD.h>.
 build.sd_defines=
 
-build.defines=-DF_CPU={build.f_cpu} -DARDUINO=10819 -DARDUINO_{build.board} -DARDUINO_ARCH_TANGNANO20K {build.sd_defines}
+build.defines=-DF_CPU={build.f_cpu} -DARDUINO=10819 -DARDUINO_{build.board} -DARDUINO_ARCH_TANGNANO20K -DTANGNANO20K_SPI_COUNT={build.spi_count} -DTANGNANO20K_I2C_COUNT={build.i2c_count} {build.sd_defines}
 
 # Overridden per-selection by the Tools > Optimize board menu (see
 # boards.txt); this is the fallback if a sketch/IDE somehow doesn't set it.
