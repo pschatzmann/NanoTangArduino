@@ -86,9 +86,9 @@ release if they're unchanged.
 7. Verify end-to-end before telling anyone the release is ready:
    ```sh
    arduino-cli core update-index --additional-urls \
-     https://raw.githubusercontent.com/pschatzmann/arduino-nanotang/master/package_nanotang_index.json
+     https://raw.githubusercontent.com/pschatzmann/arduino-nanotang/main/package_nanotang_index.json
    arduino-cli core install nanotang:tangnano20k --additional-urls \
-     https://raw.githubusercontent.com/pschatzmann/arduino-nanotang/master/package_nanotang_index.json
+     https://raw.githubusercontent.com/pschatzmann/arduino-nanotang/main/package_nanotang_index.json
    arduino-cli compile --fqbn nanotang:tangnano20k:tangnano20k examples/Blink
    ```
    A local dry run against a `file://` URL for the just-generated
