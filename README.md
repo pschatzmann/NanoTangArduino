@@ -94,7 +94,7 @@ connector are not used by this core.
 
 **Boards Manager** (once a release is published — see
 [Releasing](docs/RELEASING.md)): add
-`https://raw.githubusercontent.com/pschatzmann/NanoTangArduino/main/package_nanotang_index.json`
+`https://raw.githubusercontent.com/pschatzmann/arduino-nanotang/main/package_nanotang_index.json`
 under Additional Boards Manager URLs, then install `nanotang:tangnano20k`
 — this also installs a working RISC-V compiler automatically (Linux
 x86_64, macOS Intel/Apple Silicon, or Windows 64-bit).
@@ -103,7 +103,7 @@ x86_64, macOS Intel/Apple Silicon, or Windows 64-bit).
 
 ```sh
 mkdir -p ~/Arduino/hardware/nanotang
-ln -s /path/to/NanoTangArduino ~/Arduino/hardware/nanotang/tangnano20k
+ln -s /path/to/arduino-nanotang ~/Arduino/hardware/nanotang/tangnano20k
 
 arduino-cli compile --fqbn nanotang:tangnano20k:tangnano20k examples/Blink
 arduino-cli upload  --fqbn nanotang:tangnano20k:tangnano20k -p /dev/ttyUSB1 examples/Blink
