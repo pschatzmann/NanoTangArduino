@@ -72,3 +72,70 @@ static const uint8_t GPIO20 = TANGNANO20K_PIN_GPIO_BASE + 20;
  * the 21 GPIO pins and BTN1 support it; digitalPinToInterrupt() on any
  * other pin is harmless (attachInterrupt() silently ignores it). */
 #define digitalPinToInterrupt(p) (p)
+
+/* Compile-time lookups between a GPIOx constant and the physical FPGA pin
+ * number printed in the official Tang Nano 20K Datasheet v1.3 pinout
+ * table (same numbers as docs/PERIPHERALS.md "General GPIO"), in both
+ * directions. Both are ternary chains rather than real tables: with a
+ * compile-time constant argument each folds down to a single constant,
+ * same as any other macro, with no flash/runtime cost. Only defined for
+ * the 21 GPIOx pins - LEDs/BTN1/SS/MOSI/MISO/SCK aren't real header pins
+ * in this sense (see their own comments above).
+ *
+ * TANGNANO20K_PHYSICAL_PIN(GPIOn) -> physical pin, e.g.
+ * TANGNANO20K_PHYSICAL_PIN(GPIO3) == 77. Any other GPIOn argument yields
+ * 0. Useful for cross-checking code against the datasheet/schematic. */
+#define TANGNANO20K_PHYSICAL_PIN(pin) \
+  ((pin) == GPIO0  ? 73 : \
+   (pin) == GPIO1  ? 74 : \
+   (pin) == GPIO2  ? 75 : \
+   (pin) == GPIO3  ? 77 : \
+   (pin) == GPIO4  ? 27 : \
+   (pin) == GPIO5  ? 28 : \
+   (pin) == GPIO6  ? 25 : \
+   (pin) == GPIO7  ? 26 : \
+   (pin) == GPIO8  ? 29 : \
+   (pin) == GPIO9  ? 30 : \
+   (pin) == GPIO10 ? 31 : \
+   (pin) == GPIO11 ? 76 : \
+   (pin) == GPIO12 ? 42 : \
+   (pin) == GPIO13 ? 41 : \
+   (pin) == GPIO14 ? 48 : \
+   (pin) == GPIO15 ? 49 : \
+   (pin) == GPIO16 ? 86 : \
+   (pin) == GPIO17 ? 72 : \
+   (pin) == GPIO18 ? 71 : \
+   (pin) == GPIO19 ? 53 : \
+   (pin) == GPIO20 ? 52 : \
+   0)
+
+/* TANGNANO20K_GPIO_FOR_PIN(physPin) -> GPIOn, the inverse of
+ * TANGNANO20K_PHYSICAL_PIN() above, e.g. TANGNANO20K_GPIO_FOR_PIN(77) ==
+ * GPIO3 - useful when wiring against the datasheet/schematic and you know
+ * the physical pin but want the GPIOx name to pass to
+ * pinMode()/digitalWrite(). Any other physPin argument (including the
+ * LED/I2S/I2C/etc. pins' own physical numbers, which aren't reachable as
+ * GPIOx at all) yields 0xFF. */
+#define TANGNANO20K_GPIO_FOR_PIN(physPin) \
+  ((physPin) == 73 ? GPIO0  : \
+   (physPin) == 74 ? GPIO1  : \
+   (physPin) == 75 ? GPIO2  : \
+   (physPin) == 77 ? GPIO3  : \
+   (physPin) == 27 ? GPIO4  : \
+   (physPin) == 28 ? GPIO5  : \
+   (physPin) == 25 ? GPIO6  : \
+   (physPin) == 26 ? GPIO7  : \
+   (physPin) == 29 ? GPIO8  : \
+   (physPin) == 30 ? GPIO9  : \
+   (physPin) == 31 ? GPIO10 : \
+   (physPin) == 76 ? GPIO11 : \
+   (physPin) == 42 ? GPIO12 : \
+   (physPin) == 41 ? GPIO13 : \
+   (physPin) == 48 ? GPIO14 : \
+   (physPin) == 49 ? GPIO15 : \
+   (physPin) == 86 ? GPIO16 : \
+   (physPin) == 72 ? GPIO17 : \
+   (physPin) == 71 ? GPIO18 : \
+   (physPin) == 53 ? GPIO19 : \
+   (physPin) == 52 ? GPIO20 : \
+   0xFF)

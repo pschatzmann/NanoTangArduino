@@ -58,7 +58,11 @@ that connector/bus.
 See `examples/GPIOBlink`. Pin numbers are sourced from the official
 [Tang Nano 20K Datasheet v1.3](https://dl.sipeed.com/fileList/TANG/Nano_20K/1_Datasheet/Sipeed%20Tang%20nano%2020K%20Datasheet%20V1.3-en_US.pdf)'s
 pinout table, cross-checked against the schematic pin numbers used
-elsewhere in this file.
+elsewhere in this file. `variants/tangnano20k/pins_arduino.h` has
+compile-time lookups both ways: `TANGNANO20K_PHYSICAL_PIN(GPIOn)` (e.g.
+`TANGNANO20K_PHYSICAL_PIN(GPIO3)` is `77`) and, the other direction,
+`TANGNANO20K_GPIO_FOR_PIN(n)` (e.g. `TANGNANO20K_GPIO_FOR_PIN(77)` is
+`GPIO3`).
 
 ## WS2812 LED
 
