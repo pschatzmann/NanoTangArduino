@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verification script for NanoTangArduino: checks the gateware elaborates
+# Verification script for arduino-tangnano20k: checks the gateware elaborates
 # cleanly and every example sketch compiles/links against the RISC-V
 # toolchain. Run after any change to gateware/src/*.v or cores/tangnano20k/.
 #

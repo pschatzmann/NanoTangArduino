@@ -1,4 +1,4 @@
-/* Startup for the NanoTangArduino PicoRV32 core.
+/* Startup for the arduino-tangnano20k PicoRV32 core.
  * Unlike the reference project's startup.s, this clears .bss and runs
  * C++ global constructors before calling main(), since the Arduino core
  * relies on global objects (e.g. the Serial instance).

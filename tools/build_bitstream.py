@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn a linked NanoTangArduino .elf into a Gowin bitstream (.fs) by baking
+"""Turn a linked arduino-tangnano20k .elf into a Gowin bitstream (.fs) by baking
 a program into the gateware's SRAM initialization files and running the
 open-source FPGA flow (yosys -> nextpnr-himbaechel -> gowin_pack).
 

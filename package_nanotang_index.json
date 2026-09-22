@@ -2,7 +2,7 @@
   "packages": [
     {
       "name": "nanotang",
-      "maintainer": "NanoTangArduino",
+      "maintainer": "Phil Schatzmann",
       "websiteURL": "https://github.com/pschatzmann/arduino-tangnano20k",
       "email": "phil.schatzmann@gmail.com",
       "help": {
@@ -14,8 +14,8 @@
           "architecture": "tangnano20k",
           "version": "0.1.0",
           "category": "Contributed",
-          "url": "https://github.com/pschatzmann/arduino-tangnano20k/releases/download/v0.1.0/NanoTangArduino-0.1.0.tar.bz2",
-          "archiveFileName": "NanoTangArduino-0.1.0.tar.bz2",
+          "url": "https://github.com/pschatzmann/arduino-tangnano20k/releases/download/v0.1.0/arduino-tangnano20k-0.1.0.tar.bz2",
+          "archiveFileName": "arduino-tangnano20k-0.1.0.tar.bz2",
           "checksum": "SHA-256:6a9cc157548a9aaf4d2d3593d8345b6228d2dc174e72f707c5b45f8ee96c469b",
           "size": "177750",
           "help": {

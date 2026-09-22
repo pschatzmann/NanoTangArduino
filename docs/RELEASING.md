@@ -10,7 +10,7 @@ resulting install experience looks like.
 The board package plus one toolchain archive per supported host, all
 attached to one GitHub Release:
 
-- `NanoTangArduino-<version>.tar.bz2` - the board package itself
+- `arduino-tangnano20k-<version>.tar.bz2` - the board package itself
   (`boards.txt`, `platform.txt`, `cores/`, `variants/`, `libraries/`,
   `gateware/`, `tools/`, `examples/`, `docs/`).
 - `riscv-zephyr-elf-<toolchain-version>-<host-triple>.<ext>` - the Zephyr

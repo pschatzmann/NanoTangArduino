@@ -14,7 +14,7 @@
 #                        the index (default: the Zephyr SDK's own version,
 #                        read from $ZEPHYR_SDK_DIR/sdk_version)
 #   GITHUB_REPO      - owner/repo used to build the release download URLs
-#                        (default: pschatzmann/NanoTangArduino)
+#                        (default: pschatzmann/arduino-tangnano20k)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -23,10 +23,10 @@ cd "$ROOT"
 VERSION="${1:-$(sed -n 's/^version=//p' platform.txt)}"
 ZEPHYR_SDK_DIR="${ZEPHYR_SDK_DIR:-$HOME/zephyr-sdk-0.17.0}"
 TOOLCHAIN_VERSION="${TOOLCHAIN_VERSION:-$(cat "$ZEPHYR_SDK_DIR/sdk_version" 2>/dev/null || echo "0.17.0")}"
-GITHUB_REPO="${GITHUB_REPO:-pschatzmann/NanoTangArduino}"
+GITHUB_REPO="${GITHUB_REPO:-pschatzmann/arduino-tangnano20k}"
 HOST="x86_64-pc-linux-gnu"
 
-BOARD_ARCHIVE="NanoTangArduino-${VERSION}.tar.bz2"
+BOARD_ARCHIVE="arduino-tangnano20k-${VERSION}.tar.bz2"
 TOOL_NAME="riscv-zephyr-elf"
 TOOL_ARCHIVE="${TOOL_NAME}-${TOOLCHAIN_VERSION}-${HOST}.tar.bz2"
 
@@ -42,7 +42,7 @@ rm -f "$DIST/$BOARD_ARCHIVE" "$DIST/$TOOL_ARCHIVE"
 echo "== Packaging board files ($BOARD_ARCHIVE) =="
 BOARD_STAGE="$(mktemp -d)"
 trap 'rm -rf "$BOARD_STAGE"' EXIT
-mkdir -p "$BOARD_STAGE/NanoTangArduino"
+mkdir -p "$BOARD_STAGE/arduino-tangnano20k"
 tar -c \
   --exclude='.git*' \
   --exclude='.github' \
@@ -52,8 +52,8 @@ tar -c \
   --exclude='*.o' --exclude='*.elf' --exclude='*.bin' --exclude='*.fs' \
   --exclude='build' \
   -C "$ROOT" . \
-  | tar -x -C "$BOARD_STAGE/NanoTangArduino"
-tar -cjf "$DIST/$BOARD_ARCHIVE" -C "$BOARD_STAGE" NanoTangArduino
+  | tar -x -C "$BOARD_STAGE/arduino-tangnano20k"
+tar -cjf "$DIST/$BOARD_ARCHIVE" -C "$BOARD_STAGE" arduino-tangnano20k
 
 echo "== Packaging RISC-V toolchain ($TOOL_ARCHIVE) =="
 if [ ! -d "$ZEPHYR_SDK_DIR/riscv64-zephyr-elf" ]; then
@@ -109,7 +109,7 @@ extra_systems = json.loads(sys.argv[2])
 index = {
     "packages": [{
         "name": "nanotang",
-        "maintainer": "NanoTangArduino",
+        "maintainer": "Phil Schatzmann",
         "websiteURL": "https://github.com/${GITHUB_REPO}",
         "email": "phil.schatzmann@gmail.com",
         "help": {"online": "https://github.com/${GITHUB_REPO}/blob/main/docs/BUILDING.md"},

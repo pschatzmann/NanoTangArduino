@@ -2,7 +2,7 @@
 // nand2mario
 //
 // Vendored from sipeed/TangNano-20K-example (nestang/src/sdram.v),
-// unmodified, for the NanoTangArduino core. License: GNU GPLv3 (see
+// unmodified, for the arduino-tangnano20k core. License: GNU GPLv3 (see
 // nestang's LICENSE) - this file's inclusion is why gateware/ as a whole
 // is GPLv3, unlike the rest of this repo's permissively-licensed sources.
 // See docs/LICENSING.md for details.

@@ -6,7 +6,7 @@
 //Device: GW2A-18C
 //
 // Vendored from sipeed/TangNano-20K-example (nestang/src/gowin_rpll_nes),
-// renamed Gowin_rPLL_sys, for the NanoTangArduino core's system clock.
+// renamed Gowin_rPLL_sys, for the arduino-tangnano20k core's system clock.
 // This is plain Gowin IP-Core-Generator boilerplate (not proprietary/
 // encrypted). clkout drives the whole SoC (replacing the old 20MHz
 // external-clock-chip setup), clkoutp is the same frequency phase-shifted

@@ -1,4 +1,4 @@
-/* Top level SoC for the NanoTangArduino core (Sipeed Tang Nano 20K).
+/* Top level SoC for the arduino-tangnano20k core (Sipeed Tang Nano 20K).
  *
  * Derived from grughuhler/picorv32_tang_nano_20k's top.v (BSD-2-Clause),
  * trimmed for v1 (LEDs + UART only, WS2812B/countdown timer dropped) and

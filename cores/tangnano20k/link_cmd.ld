@@ -1,4 +1,4 @@
-/* Linker script for the NanoTangArduino PicoRV32 SoC.
+/* Linker script for the arduino-tangnano20k PicoRV32 SoC.
  * Must match gateware/src/sys_parameters.v (SRAM_ADDR_WIDTH=14 -> 64KB).
  *
  * Fixed low-memory layout for interrupts (see irq_vec.S, top.v's

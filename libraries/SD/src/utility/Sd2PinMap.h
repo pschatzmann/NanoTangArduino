@@ -524,7 +524,7 @@ void fastDigitalWrite(uint8_t pin, uint8_t value) {
 #endif	// Arduino ARC
 
 #elif defined(ARDUINO_ARCH_TANGNANO20K)
-/* NanoTangArduino-specific addition (the one deliberate edit to this
+/* arduino-tangnano20k-specific addition (the one deliberate edit to this
  * otherwise-vendored-unmodified file): this core only uses the hardware
  * SPI path (USE_SPI_LIB in Sd2Card.h), which needs nothing from this file
  * beyond these four constants - mirrors the __arm__ branch above exactly. */

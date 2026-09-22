@@ -10,7 +10,7 @@
  * 
  * Reset neither clears nor reinitializes memory.
  *
- * NanoTangArduino patch: the read-data register's async reset (`or negedge
+ * arduino-tangnano20k patch: the read-data register's async reset (`or negedge
  * reset_n` below) was removed - a harmless simplification (a plain
  * synchronous read register with no reset, whose value nothing ever reads
  * before the first genuine `ce & !wre` cycle). The `(* ram_style = "block" *)`

@@ -1,6 +1,6 @@
 #pragma once
 
-/* Memory map of the NanoTangArduino PicoRV32 SoC. Must match
+/* Memory map of the arduino-tangnano20k PicoRV32 SoC. Must match
  * gateware/src/top.v and gateware/src/sys_parameters.v. */
 
 #include <stdint.h>

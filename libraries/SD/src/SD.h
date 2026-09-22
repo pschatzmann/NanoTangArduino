@@ -15,7 +15,7 @@
 #ifndef __SD_H__
 #define __SD_H__
 
-/* NanoTangArduino-specific addition (the second of two deliberate edits
+/* arduino-tangnano20k-specific addition (the second of two deliberate edits
  * to this otherwise-vendored-unmodified library, see docs/PERIPHERALS.md "SD card"):
  * this file is GPLv3, which reaches your sketch's compiled binary once
  * it's included, unlike the rest of this core's permissively-licensed
