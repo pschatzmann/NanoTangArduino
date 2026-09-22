@@ -118,7 +118,7 @@ full list.
      https://raw.githubusercontent.com/pschatzmann/arduino-tangnano20k/main/package_nanotang_index.json
    arduino-cli core install nanotang:tangnano20k --additional-urls \
      https://raw.githubusercontent.com/pschatzmann/arduino-tangnano20k/main/package_nanotang_index.json
-   arduino-cli compile --fqbn nanotang:tangnano20k:tangnano20k examples/Blink
+   arduino-cli compile --fqbn nanotang:tangnano20k:tangnano20k libraries/Core/examples/Blink
    ```
    A local dry run against a `file://` URL for the just-generated
    `package_nanotang_index.json` works too, and doesn't need step 4/5 done

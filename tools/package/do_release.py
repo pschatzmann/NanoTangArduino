@@ -16,7 +16,7 @@ Steps run, in order:
      release if it doesn't exist yet, uploads every archive in dist/)
   6. git commit (and, with --push, push) the regenerated
      package_nanotang_index.json
-  7. arduino-cli core update-index / core install / compile examples/Blink
+  7. arduino-cli core update-index / core install / compile libraries/Core/examples/Blink
      against the live raw index URL (skipped with --skip-verify)
 
 Usage:
@@ -194,7 +194,7 @@ def main():
     run(["arduino-cli", "core", "update-index", "--additional-urls", raw_url])
     run(["arduino-cli", "core", "install", f"{fqbn_package}:{fqbn_arch}",
          "--additional-urls", raw_url])
-    run(["arduino-cli", "compile", "--fqbn", fqbn, "examples/Blink"])
+    run(["arduino-cli", "compile", "--fqbn", fqbn, "libraries/Core/examples/Blink"])
 
     print(f"\nRelease {tag} done and verified.")
 

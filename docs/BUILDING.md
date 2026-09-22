@@ -58,8 +58,8 @@ ln -s /path/to/arduino-tangnano20k ~/Arduino/hardware/nanotang/tangnano20k
 Then the board is available as FQBN `nanotang:tangnano20k:tangnano20k`:
 
 ```sh
-arduino-cli compile --fqbn nanotang:tangnano20k:tangnano20k examples/Blink
-arduino-cli upload  --fqbn nanotang:tangnano20k:tangnano20k -p /dev/ttyUSB1 examples/Blink
+arduino-cli compile --fqbn nanotang:tangnano20k:tangnano20k libraries/Core/examples/Blink
+arduino-cli upload  --fqbn nanotang:tangnano20k:tangnano20k -p /dev/ttyUSB1 libraries/Core/examples/Blink
 ```
 
 (`-p` is required by arduino-cli's CLI parsing but unused by the upload
@@ -71,7 +71,7 @@ recipe, which always targets the board via `openFPGALoader -b tangnano20k`.)
 the CLI). Combine as many as needed, e.g.:
 
 ```sh
-arduino-cli compile --fqbn nanotang:tangnano20k:tangnano20k:optimize=fastest,sd_card=enabled examples/SDReadWrite
+arduino-cli compile --fqbn nanotang:tangnano20k:tangnano20k:optimize=fastest,sd_card=enabled libraries/SD/examples/SDReadWrite
 ```
 
 ### Optimize

@@ -106,8 +106,8 @@ x86_64, macOS Intel/Apple Silicon, or Windows 64-bit).
 mkdir -p ~/Arduino/hardware/nanotang
 ln -s /path/to/arduino-tangnano20k ~/Arduino/hardware/nanotang/tangnano20k
 
-arduino-cli compile --fqbn nanotang:tangnano20k:tangnano20k examples/Blink
-arduino-cli upload  --fqbn nanotang:tangnano20k:tangnano20k -p /dev/ttyUSB1 examples/Blink
+arduino-cli compile --fqbn nanotang:tangnano20k:tangnano20k libraries/Core/examples/Blink
+arduino-cli upload  --fqbn nanotang:tangnano20k:tangnano20k -p /dev/ttyUSB1 libraries/Core/examples/Blink
 ```
 
 See [Building, installing, and verifying](docs/BUILDING.md) for

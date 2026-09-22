@@ -55,7 +55,7 @@ that connector/bus.
 
 (Pin 79, formerly `GPIO17`, is now the dedicated [WS2812 LED](#ws2812-led) pin.)
 
-See `examples/GPIOBlink`. Pin numbers are sourced from the official
+See `libraries/Core/examples/GPIOBlink`. Pin numbers are sourced from the official
 [Tang Nano 20K Datasheet v1.3](https://dl.sipeed.com/fileList/TANG/Nano_20K/1_Datasheet/Sipeed%20Tang%20nano%2020K%20Datasheet%20V1.3-en_US.pdf)'s
 pinout table, cross-checked against the schematic pin numbers used
 elsewhere in this file. `variants/tangnano20k/pins_arduino.h` has
@@ -75,7 +75,7 @@ vendored unmodified from
 (BSD-2-Clause) - a real hardware shift-timer, not software bit-banging,
 since WS2812's protocol needs ~400ns-precision pulses well beyond what's
 reliably achievable in C at this core's default 27MHz. See
-`examples/WS2812Rainbow`.
+`libraries/WS2812/examples/WS2812Rainbow`.
 
 ## Audio (I2S)
 
@@ -140,7 +140,7 @@ in the background rather than assuming more is always imminent.
   automatically. Pin numbers (`PA_EN`=51, `DIN`=54, `WS`=55, `BCLK`=56)
   are confirmed against Sipeed's own
   [audio example](https://github.com/sipeed/TangNano-20K-example/tree/main/audio).
-  See `examples/I2SToneTest`.
+  See `libraries/I2S/examples/I2SToneTest`.
 - **Receive**: select **Tools > I2S Input: Enabled** (disabled by
   default, same real GPIO-pin cost/opt-in pattern as a
   [second SPI/I2C port](#a-second-spi--i2c-port)) and wire an external I2S
@@ -150,7 +150,7 @@ in the background rather than assuming more is always imminent.
   bitstream itself), independent of the `mode` passed to `begin()`. With
   the menu left disabled, `GPIO6` stays plain GPIO and captured samples
   are always silence.
-- **Duplex**: see above - `examples/I2SDuplexTest` passes each captured
+- **Duplex**: see above - `libraries/I2S/examples/I2SDuplexTest` passes each captured
   frame straight back out to the amplifier.
 
 | Object | Menu | Function | Pin printed on the device |
@@ -196,11 +196,11 @@ Both are present by default but independently configurable via
   only, MSB-first. There's a single fixed CS line asserted for the
   duration of `beginTransaction()`/`endTransaction()`, not a
   general-purpose CS pin — only one SPI device at a time. See
-  `examples/SPITransfer`.
+  `libraries/SPI/examples/SPITransfer`.
 - **I2C** (`#include <Wire.h>`, `libraries/Wire/`, backed by
   `gateware/src/od_gpio2.v`): bit-banged in software over an open-drain
   SDA/SCL pair (internal pull-ups enabled in the `.cst`), master mode
-  only. See `examples/I2CScanner`.
+  only. See `libraries/Wire/examples/I2CScanner`.
 
 | Object | Menu | Function | Pin printed on the device |
 |---|---|---|---|
@@ -236,7 +236,7 @@ used above), so the second port runs on general-purpose GPIO instead.
 Selecting **Two** permanently removes those specific GPIO pins (0-3 for
 SPI, 4-5 for I2C) from the general-purpose GPIO pool (see
 [General GPIO](#general-gpio)) - same tradeoff as AI Accelerator's
-LUT/BRAM cost, but for GPIO pins instead. See `examples/ExtraSPII2CTest`.
+LUT/BRAM cost, but for GPIO pins instead. See `libraries/SPI/examples/ExtraSPII2CTest`.
 
 ### SD card
 
@@ -271,7 +271,7 @@ peripheral; the menu only gates whether `SD.h` compiles.
 Untested on real hardware, like everything else in this repo (see
 [Known limitations](KNOWN_LIMITATIONS.md)) - card detection, FAT parsing,
 and the SPI timing this library assumes have not been exercised against
-an actual card or the real gateware. See `examples/SDReadWrite`.
+an actual card or the real gateware. See `libraries/SD/examples/SDReadWrite`.
 
 ## Heap / `malloc`
 
@@ -287,7 +287,7 @@ byte-oriented interface and handles periodic refresh.
 sorted free list with coalescing (this is `-nostdlib`, so there is no libc
 heap unless we provide one) — backed by that 8MB region. The internal
 64KB block-RAM (program/data/stack) is **not** part of this heap. See
-`examples/MallocTest`.
+`libraries/Core/examples/MallocTest`.
 
 ## AI accelerator
 
@@ -325,7 +325,7 @@ and no `begin(SPIClass&, csPin, sckHz)`/`ping()`/`protocolVersion()`/
 `computeDelayMicros()` at all, since there's no SPI link to manage or
 probe. `compute()`'s underlying register read blocks in hardware until
 the engine's `done` actually fires, rather than a software poll loop or
-a delay sized from a cycle-count formula. See `examples/AIAcceleratorTest`.
+a delay sized from a cycle-count formula. See `libraries/AIAccelerator/examples/AIAcceleratorTest`.
 
 **Multiple instances**: `AIAccelerator instanceA(...), instanceB(...);`
 each keep their own weight tile and results buffer in heap-allocated
@@ -339,7 +339,7 @@ instance, one weight-tile reload if you alternate. Each instance's
 `compute()` always blocks until its own result is ready before
 returning, so there's no way to interleave two instances' in-flight
 computations - one instance's `compute()` call fully finishes before
-another instance's can start. See `examples/AIAcceleratorMultiInstanceTest`.
+another instance's can start. See `libraries/AIAccelerator/examples/AIAcceleratorMultiInstanceTest`.
 
 Untested on real hardware, like everything else in this repo - and more
 than most, since it also inherits NanoTangAI's own from-simulation-only
@@ -393,8 +393,8 @@ register mid-countdown. There are `TANGNANO20K_SW_TIMER_COUNT` (6) slots
 total; `tone()` always occupies one, leaving up to 5 concurrent `TangTimer`
 instances.
 
-See `examples/ButtonInterrupt`, `examples/ToneTest`,
-`examples/TangTimerBlink`.
+See `libraries/Core/examples/ButtonInterrupt`, `libraries/Core/examples/ToneTest`,
+`libraries/TangTimer/examples/TangTimerBlink`.
 
 ## Software Serial
 
@@ -427,7 +427,7 @@ need it fast: `SoftwareSerial ss(rxPin, txPin); ss.begin(9600);`.
   (16 bytes) has dropped a byte since the last call - there's no flow
   control to slow a sender down.
 
-See `examples/SoftwareSerialTest`.
+See `libraries/SoftwareSerial/examples/SoftwareSerialTest`.
 
 ## DMA
 
@@ -451,7 +451,7 @@ software loop. It has two independent modes:
   instant the engine hands the bus back. There is nothing to poll: by the
   time any of your code after the call runs, the copy has already
   finished. This is a throughput accelerator for the copy itself, not a
-  way to overlap a copy with other work. See `examples/DMACopyTest`.
+  way to overlap a copy with other work. See `libraries/DMA/examples/DMACopyTest`.
 - **Async**: `dmaCopyWordsAsync(dst, src, wordCount, callback)`. Returns
   immediately; `loop()` (and timers, `tone()`, `attachInterrupt()`
   callbacks, everything) keeps running normally while the copy happens in
@@ -471,7 +471,7 @@ software loop. It has two independent modes:
   `extirq`; this is `irq[4]`), read-clear like `extirq`'s `STATUS`
   register — `dmaAsyncBusy()` polls the same register, so don't mix
   polling and the callback for the same transfer (whichever reads first
-  clears it for the other). See `examples/DMAAsyncTest`, which blinks an
+  clears it for the other). See `libraries/DMA/examples/DMAAsyncTest`, which blinks an
   LED from `loop()` throughout a 1MB background copy to make the
   difference from the blocking mode visible.
 
@@ -525,7 +525,7 @@ blocking via the same bus backpressure every other peripheral in this
 design uses. `tools/build_bitstream.py` extracts the `.flash_data`
 section's raw bytes from the compiled ELF; `tools/upload.py` writes them
 to the flash's data partition as part of every upload, in either boot
-mode. See `examples/FlashDataTest`.
+mode. See `libraries/Core/examples/FlashDataTest`.
 
 ## CPU features
 
