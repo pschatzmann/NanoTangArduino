@@ -37,6 +37,31 @@ enum I2SBitsPerSample
   I2S_BITS_32         = 32
 };
 
+/* begin()'s settings - see I2SClass::defaultConfig() and begin().
+ *
+ * `sampleRate` sets the shared BCLK divisor: bclk runs at sampleRate * 32
+ * (16 bits x 2 channels, regardless of `channels`/`bits` below - both
+ * only affect write()/read()'s byte framing/conversion, not the hardware
+ * timing). `mode` selects whether begin() enables the amplifier (PA_EN) -
+ * I2S_MODE_INPUT leaves it disabled, OUTPUT/DUPLEX enable it - and
+ * whether the receive-side background interrupt is armed (INPUT/DUPLEX
+ * only; see the I2SClass comment below and serviceIrq()). `channels` is
+ * 1 (mono) or 2 (stereo, the default); with 1, writes duplicate the
+ * single sample onto both hardware channels, and reads only expose the
+ * left channel. `bits` (8/16/24/32, default 16) is write()/read()'s
+ * sample width - see I2SBitsPerSample. `ringSamples` (default 64) sets
+ * the depth of each direction's software ring buffer - see the I2SClass
+ * comment below; each sample costs 4 bytes, heap-allocated (this core's
+ * heap is the embedded 8MB SDRAM - see docs/PERIPHERALS.md#heap--malloc). */
+struct I2SConfig
+{
+  unsigned long sampleRate = 16000;
+  I2SMode mode = I2S_MODE_OUTPUT;
+  uint8_t channels = 2;
+  I2SBitsPerSample bits = I2S_BITS_16;
+  uint16_t ringSamples = 64;
+};
+
 /* Stereo (or mono) I2S to the onboard MAX98357A amplifier (transmit,
  * always available) and, optionally, an external I2S microphone (receive
  * - see Tools > I2S Input), driven by the gateware's i2s peripheral (see
@@ -52,10 +77,10 @@ enum I2SBitsPerSample
  *
  * One API: `I2SClass` is an `arduino::Stream` - write(uint8_t)/read()/
  * peek()/available() are the only way in or out, working on raw
- * little-endian PCM bytes at the configured `bits` depth (see begin()),
+ * little-endian PCM bytes at the configured `bits` depth (see I2SConfig),
  * channels interleaved left-then-right, converting to/from the
  * hardware's native 16-bit samples internally. This is backed by its
- * own `ringSamples`-deep (see begin()) software ring buffer per
+ * own `ringSamples`-deep (see I2SConfig) software ring buffer per
  * direction, heap-allocated, that a background interrupt drains/fills
  * against i2s.v's own hardware FIFO - see serviceIrq() - so write() only
  * blocks once you're `ringSamples` samples ahead of hardware, and
@@ -71,34 +96,40 @@ enum I2SBitsPerSample
 class I2SClass : public arduino::Stream
 {
 public:
-  /* Configures the shared BCLK divisor for sampleRate: bclk runs at
-   * sampleRate * 32 (16 bits x 2 channels, regardless of `channels`/
-   * `bits` below - both only affect write()/read()'s byte framing/
-   * conversion, not the hardware timing). `mode` selects whether
-   * begin() enables the amplifier (PA_EN) - I2S_MODE_INPUT leaves it
-   * disabled, OUTPUT/DUPLEX enable it - and whether the receive-side
-   * background interrupt is armed (INPUT/DUPLEX only; see the class
-   * comment above and serviceIrq() below). `channels` is 1 (mono) or 2
-   * (stereo, the default); with 1, writes duplicate the single sample
-   * onto both hardware channels, and reads only expose the left
-   * channel. `bits` (8/16/24/32, default 16) is write()/read()'s sample
-   * width - see I2SBitsPerSample. `ringSamples` (default 64) sets the
-   * depth of each direction's software ring buffer - see the class
-   * comment above; each sample costs 4 bytes, heap-allocated (this
-   * core's heap is the embedded 8MB SDRAM - see
-   * docs/PERIPHERALS.md#heap--malloc). If the allocation fails (e.g. an
-   * unreasonably large `ringSamples`), begin() falls back to the
-   * smallest usable ring (1 sample) rather than leaving a null buffer;
-   * check `ringSamples()` afterwards if this matters to your sketch.
-   * Calling begin() again reallocates the rings only if `ringSamples`
-   * actually changed from the previous call. */
-  void begin(unsigned long sampleRate, I2SMode mode = I2S_MODE_OUTPUT,
-             uint8_t channels = 2, I2SBitsPerSample bits = I2S_BITS_16,
-             uint16_t ringSamples = 64);
+  /* A default-initialized I2SConfig for `mode` - fill in whatever
+   * differs (typically `sampleRate`) and pass it to begin(). */
+  I2SConfig defaultConfig(I2SMode mode = I2S_MODE_OUTPUT) const
+  {
+    I2SConfig config;
+    config.mode = mode;
+    return config;
+  }
 
-  /* The ring buffer depth actually in effect - see begin()'s
-   * `ringSamples` parameter and its note about allocation fallback. */
-  uint16_t ringSamples(void) const { return ringSamples_; }
+  /* (Re)starts with the configuration last passed to begin(const
+   * I2SConfig &) - or I2SConfig's defaults if there was none. */
+  void begin(void);
+
+  /* Applies `config` - see I2SConfig for what each field does. If the
+   * ring buffer allocation fails (e.g. an unreasonably large
+   * `ringSamples`), begin() falls back to the smallest usable ring (1
+   * sample) rather than leaving a null buffer; check `ringSamples()`
+   * afterwards if this matters to your sketch. Calling begin() again
+   * reallocates the rings only if `ringSamples` actually changed from
+   * the previous call. */
+  void begin(const I2SConfig &config)
+  {
+    config_ = config;
+    begin();
+  }
+
+  /* The configuration actually in effect - begin()'s `config`, with
+   * `channels`/`bits` normalized to supported values and `ringSamples`
+   * reflecting any allocation fallback. */
+  const I2SConfig &config(void) const { return config_; }
+
+  /* The ring buffer depth actually in effect - see I2SConfig's
+   * `ringSamples` and begin()'s note about allocation fallback. */
+  uint16_t ringSamples(void) const { return ringCapacity_; }
 
   /* Disables the amplifier and the background interrupt. Does not stop
    * the shared BCLK/WS generator. */
@@ -127,13 +158,13 @@ public:
   void serviceIrq(void);
 
 private:
-  I2SMode mode_ = I2S_MODE_OUTPUT;
-  uint8_t channels_ = 2;
-  I2SBitsPerSample bits_ = I2S_BITS_16;
+  /* Effective settings - see config(). `ringSamples` stays 0 until the
+   * first begin() allocates the rings. */
+  I2SConfig config_ = {44800, I2S_MODE_OUTPUT, 2, I2S_BITS_16, 64};
   uint8_t bytesPerSample_ = 2;
 
   /* Software ring buffers, one hardware-format {left16,right16} sample
-   * per slot, heap-allocated in begin() to `ringSamples_` entries each -
+   * per slot, heap-allocated in begin() to `ringCapacity_` entries each -
    * see serviceIrq() and the class comment above. `volatile` because
    * both the ISR (serviceIrq()) and mainline code (write(uint8_t)/
    * read()) touch these; every multi-step update is wrapped in
@@ -141,7 +172,7 @@ private:
    * convention, e.g. attachInterrupt()'s slot updates) since picorv32
    * itself already serializes against re-entrant IRQs (interrupts stay
    * masked until retirq), so only mainline-vs-ISR races need guarding. */
-  uint16_t ringSamples_ = 0;
+  uint16_t ringCapacity_ = 0; // slots actually allocated, independent of config_
   volatile uint32_t *txRing_ = nullptr;
   volatile uint16_t txRingHead_ = 0; // next slot write(uint8_t) will fill
   volatile uint16_t txRingTail_ = 0; // next slot serviceIrq() will drain

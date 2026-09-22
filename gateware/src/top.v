@@ -24,9 +24,12 @@
  *   0x8000_0164                  I2S STATUS register: bits[4:0]=TX FIFO
  *                                 free slots, bits[9:5]=RX FIFO count
  *                                 (read-only, see i2s.v)
+ *   0x8000_0170 - 0x8000_017c    PWM audio PERIOD/SAMPLE_DIV/DATA/CTRL
+ *                                 (Tools > PWM Audio only - see pwm_audio.v)
  *   0x8000_0050                  KEY_S2 button, bit0, read-only
- *   0x8000_0060 - 0x8000_0074    PWM duty/enable, one reg per LED channel
- *                                 0-5 (bit8=enable, bits[7:0]=duty)
+ *   0x8000_0180 - 0x8000_01cc    PWM DUTY/CFG register pairs, one per
+ *                                 channel: 0-5 = LEDs, 6-9 = GPIO pool
+ *                                 (see pwm_bank.v)
  *   0x8000_0080                  SPI SCLK divisor register (write)
  *   0x8000_0084                  SPI CS register: bit0 = asserted (write)
  *   0x8000_0088                  SPI data register (read/write)
@@ -255,11 +258,17 @@ module top
    wire              i2s_ready;
    wire [31:0]       i2s_rdata;
    wire              i2s_irq_out;
+   wire              pwm_audio_sel;
+   wire              pwm_audio_ready;
+   wire [31:0]       pwm_audio_rdata;
+   wire              pwm_audio_irq_out;
    wire              key2_sel;
    wire              pwm_sel;
    wire              pwm_ready;
    wire [5:0]        pwm_out;
    wire [5:0]        pwm_enabled;
+   wire [20:0]       pwm_gpio_override;
+   wire [20:0]       pwm_gpio_value;
    wire [5:0]        leds_muxed;
    wire              spi_sel;
    wire              spi_ready;
@@ -307,8 +316,9 @@ module top
    // window from i2s_sel above, clear of ai_sel's 0x140-0x15F range and
    // gpio_sel's 0x100 window.
    assign i2s_ext_sel = mem_valid && ((mem_addr & 32'hffff_fff0) == 32'h8000_0160);
+   assign pwm_audio_sel = mem_valid && ((mem_addr & 32'hffff_fff0) == 32'h8000_0170);
    assign key2_sel    = mem_valid && (mem_addr == 32'h8000_0050);
-   assign pwm_sel     = mem_valid && ((mem_addr & 32'hffff_ffe0) == 32'h8000_0060);
+   assign pwm_sel     = mem_valid && ((mem_addr & 32'hffff_ff80) == 32'h8000_0180);
    assign spi_sel     = mem_valid && ((mem_addr & 32'hffff_fff0) == 32'h8000_0080);
    assign i2c_sel     = mem_valid && (mem_addr == 32'h8000_0090);
    assign gpio_sel    = mem_valid && ((mem_addr & 32'hffff_fff0) == 32'h8000_0100);
@@ -349,6 +359,14 @@ module top
    assign i2c2_ready = i2c2_sel;
    assign i2c2_rdata = 32'h0;
 `endif
+`ifndef WITH_PWM_AUDIO
+   // Tools > PWM Audio: Disabled (the default) - same silently-wrong-
+   // not-hung rationale as WITH_SPI1 above. CTRL reads back 0 (bit31
+   // clear), which is how libraries/PWMAudio's begin() detects this.
+   assign pwm_audio_ready   = pwm_audio_sel;
+   assign pwm_audio_rdata   = 32'h0;
+   assign pwm_audio_irq_out = 1'b0;
+`endif
 `ifndef WITH_AI_ACCEL
    // AI accelerator gateware not built in (Tools > AI Accelerator:
    // Disabled, the default). Still claim the address range and answer
@@ -365,7 +383,7 @@ module top
                         i2s_ready | key2_sel | pwm_ready | spi_ready | i2c_ready |
                         sdram_ready | gpio_ready | ai_ready | ws2812_ready |
                         extirq_ready | dma_ctrl_ready | flash_ready |
-                        spi2_ready | i2c2_ready);
+                        spi2_ready | i2c2_ready | pwm_audio_ready);
 
    assign mem_rdata = sram_sel    ? sram_data_o :
                       leds_sel    ? leds_data_o :
@@ -383,7 +401,8 @@ module top
                       dma_ctrl_sel ? dma_ctrl_rdata :
                       flash_sel    ? flash_rdata :
                       spi2_sel     ? spi2_rdata :
-                      i2c2_sel     ? i2c2_rdata : 32'h0;
+                      i2c2_sel     ? i2c2_rdata :
+                      pwm_audio_sel ? pwm_audio_rdata : 32'h0;
 
    // Per-LED mux: PWM output when analogWrite() has enabled that channel,
    // else the plain digital value from tang_leds.
@@ -447,17 +466,22 @@ module top
 `endif
       );
 
-   pwm6 leds_pwm
+   // analogWrite()/analogWriteFrequency(): 6 LED channels plus a pool of
+   // 4 channels routed onto whichever GPIO pins software assigns them to
+   // (through gpio_bank's override inputs below).
+   pwm_bank #(.LED_CHANNELS(6), .GPIO_CHANNELS(4), .GPIO_WIDTH(21)) pwm
      (
       .clk(clk_sys),
       .reset_n(reset_n),
       .pwm_sel(pwm_sel),
-      .addr(mem_addr[4:0]),
+      .addr(mem_addr[6:0]),
       .wstrb(mem_wstrb),
       .wdata(mem_wdata),
       .pwm_ready(pwm_ready),
-      .pwm_out(pwm_out),
-      .pwm_enabled(pwm_enabled)
+      .led_out(pwm_out),
+      .led_enabled(pwm_enabled),
+      .gpio_override(pwm_gpio_override),
+      .gpio_value(pwm_gpio_value)
       );
 
 `ifdef WITH_SPI1
@@ -526,6 +550,12 @@ module top
    wire       gpio_bank_dummy_i2s_rx;
 `endif
 
+`ifdef WITH_PWM_AUDIO
+   // Same idea again, for GPIO16/GPIO17, claimed as the left/right
+   // outputs by Tools > PWM Audio - see pwm_audio.v below.
+   wire [1:0] gpio_bank_dummy_pwm_audio;
+`endif
+
    gpio_bank #(.WIDTH(21)) expansion_gpio
      (
       .clk(clk_sys),
@@ -536,7 +566,15 @@ module top
       .wdata(mem_wdata),
       .ready(gpio_ready),
       .rdata(gpio_rdata),
-      .gpio({gpio[20:7],
+      .override(pwm_gpio_override),
+      .override_value(pwm_gpio_value),
+      .gpio({gpio[20:18],
+`ifdef WITH_PWM_AUDIO
+             gpio_bank_dummy_pwm_audio,
+`else
+             gpio[17:16],
+`endif
+             gpio[15:7],
 `ifdef WITH_I2S_RX
              gpio_bank_dummy_i2s_rx,
 `else
@@ -592,6 +630,25 @@ module top
       .rdata(i2c2_rdata),
       .sda(gpio[4]),
       .scl(gpio[5])
+      );
+`endif
+
+`ifdef WITH_PWM_AUDIO
+   // Tools > PWM Audio: Enabled - stereo PWM audio on GPIO16 (left) and
+   // GPIO17 (right). See pwm_audio.v and docs/PERIPHERALS.md "Audio (PWM)".
+   pwm_audio pwm_audio
+     (
+      .clk(clk_sys),
+      .reset_n(reset_n),
+      .pwm_audio_sel(pwm_audio_sel),
+      .addr(mem_addr[3:0]),
+      .wstrb(mem_wstrb),
+      .wdata(mem_wdata),
+      .pwm_audio_ready(pwm_audio_ready),
+      .pwm_audio_rdata(pwm_audio_rdata),
+      .pwm_audio_irq_out(pwm_audio_irq_out),
+      .pwm_left(gpio[16]),
+      .pwm_right(gpio[17])
       );
 `endif
 
@@ -728,7 +785,7 @@ module top
         .mem_wdata   (cpu_mem_wdata),
         .mem_wstrb   (cpu_mem_wstrb),
         .mem_rdata   (cpu_mem_rdata),
-        .irq         ({26'b0, i2s_irq_out, dma_irq_out, extirq_out, 3'b0})
+        .irq         ({25'b0, pwm_audio_irq_out, i2s_irq_out, dma_irq_out, extirq_out, 3'b0})
         );
 
    dma_engine dma

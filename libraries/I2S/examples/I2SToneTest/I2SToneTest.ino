@@ -7,7 +7,9 @@ const unsigned long toneHz = 440;
 const int16_t amplitude = 8000;
 
 void setup() {
-  I2S.begin(sampleRate);
+  I2SConfig config = I2S.defaultConfig(I2S_MODE_OUTPUT);
+  config.sampleRate = sampleRate;
+  I2S.begin(config);
 }
 
 void loop() {

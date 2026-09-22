@@ -25,3 +25,16 @@ extern arduino::HardwareSerial &Serial;
  * `maskirq` instruction. */
 void interrupts(void);
 void noInterrupts(void);
+
+/* Sets the PWM frequency analogWrite() uses on `pin` (an LED pin 0-5 or
+ * GPIO0-GPIO20), taking effect immediately if the pin is already in PWM
+ * mode. 0 restores the default (F_CPU/256, ~105kHz at 27MHz). Each pin's
+ * frequency is independent. Resolution is log2(F_CPU/frequency) bits -
+ * frequencies above F_CPU/256 trade away some of analogWrite()'s 0-255
+ * steps; the maximum is F_CPU/2, the minimum about F_CPU/2^24. See
+ * wiring_analog.cpp and docs/PERIPHERALS.md "Digital I/O and PWM". */
+void analogWriteFrequency(pin_size_t pin, uint32_t frequency);
+
+/* Internal: stops PWM on `pin` (called by pinMode()/digitalWrite(), which
+ * switch a pin back to plain digital mode, as on a real Arduino). */
+void tangnano20k_pwm_release(pin_size_t pin);

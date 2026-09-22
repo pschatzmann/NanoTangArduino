@@ -32,36 +32,34 @@ bool I2SClass::allocateRings(uint16_t samples)
   free((void *)rxRing_);
   txRing_ = newTx;
   rxRing_ = newRx;
-  ringSamples_ = samples;
+  ringCapacity_ = samples;
   return true;
 }
 
-void I2SClass::begin(unsigned long sampleRate, I2SMode mode, uint8_t channels,
-                      I2SBitsPerSample bits, uint16_t ringSamples)
+void I2SClass::begin()
 {
-  mode_ = mode;
-  channels_ = (channels >= 2) ? 2 : 1;
-  switch (bits)
+  config_.channels = (config_.channels >= 2) ? 2 : 1;
+  switch (config_.bits)
   {
     case I2S_BITS_8:
-      bits_ = I2S_BITS_8;
+      config_.bits = I2S_BITS_8;
       bytesPerSample_ = 1;
       break;
     case I2S_BITS_8_UNSIGNED:
-      bits_ = I2S_BITS_8_UNSIGNED;
+      config_.bits = I2S_BITS_8_UNSIGNED;
       bytesPerSample_ = 1;
       break;
     case I2S_BITS_24:
-      bits_ = I2S_BITS_24;
+      config_.bits = I2S_BITS_24;
       bytesPerSample_ = 3;
       break;
     case I2S_BITS_32:
-      bits_ = I2S_BITS_32;
+      config_.bits = I2S_BITS_32;
       bytesPerSample_ = 4;
       break;
     case I2S_BITS_16:
     default:
-      bits_ = I2S_BITS_16;
+      config_.bits = I2S_BITS_16;
       bytesPerSample_ = 2;
       break;
   }
@@ -69,13 +67,15 @@ void I2SClass::begin(unsigned long sampleRate, I2SMode mode, uint8_t channels,
   rxFrameLen_ = 0;
   rxFramePos_ = 0;
 
+  uint16_t ringSamples = config_.ringSamples;
   if (ringSamples == 0)
     ringSamples = 1; // A zero-deep ring can never hold a sample.
-  if (ringSamples != ringSamples_)
+  if (ringSamples != ringCapacity_)
   {
     if (!allocateRings(ringSamples) && txRing_ == nullptr)
       allocateRings(1); // First-ever begin() with an unreasonable size - fall back rather than leaving null buffers.
   }
+  config_.ringSamples = ringCapacity_;
 
   noInterrupts();
   txRingHead_ = 0;
@@ -86,7 +86,7 @@ void I2SClass::begin(unsigned long sampleRate, I2SMode mode, uint8_t channels,
   rxRingCount_ = 0;
   interrupts();
 
-  unsigned long bclk = sampleRate * 32UL;
+  unsigned long bclk = config_.sampleRate * 32UL;
   unsigned long divisor = TANGNANO20K_CLK_FREQ / (2UL * bclk);
   if (divisor > 0)
     divisor -= 1;
@@ -95,7 +95,7 @@ void I2SClass::begin(unsigned long sampleRate, I2SMode mode, uint8_t channels,
   /* PA_EN only matters for output/duplex - leaving the amplifier off in
    * pure INPUT mode saves power and avoids driving it with whatever
    * stale sample is sitting in the transmit shifter. */
-  TANGNANO20K_I2S_CTRL_REG = (mode_ != I2S_MODE_INPUT) ? TANGNANO20K_I2S_CTRL_PA_EN : 0;
+  TANGNANO20K_I2S_CTRL_REG = (config_.mode != I2S_MODE_INPUT) ? TANGNANO20K_I2S_CTRL_PA_EN : 0;
 
   tangnano20k_i2s_set_irq_callback(i2sServiceIrqTrampoline);
 
@@ -104,7 +104,7 @@ void I2SClass::begin(unsigned long sampleRate, I2SMode mode, uint8_t channels,
    * should start flowing into the ring buffer immediately whenever this
    * sketch might call read() - there's no "idle" concept for capture the
    * way there is for playback. */
-  TANGNANO20K_I2S_IRQEN_REG = (mode_ != I2S_MODE_OUTPUT) ? TANGNANO20K_I2S_IRQEN_RX : 0;
+  TANGNANO20K_I2S_IRQEN_REG = (config_.mode != I2S_MODE_OUTPUT) ? TANGNANO20K_I2S_IRQEN_RX : 0;
 }
 
 void I2SClass::end(void)
@@ -114,7 +114,7 @@ void I2SClass::end(void)
 }
 
 /* Converts `bytesPerSample_` little-endian bytes at the configured
- * `bits_` depth into the hardware's native signed 16-bit range.
+ * `config_.bits` depth into the hardware's native signed 16-bit range.
  * I2S_BITS_8_UNSIGNED is the one exception to "signed" (centered at 128,
  * as in a conventional 8-bit WAV file) - every other width, including
  * I2S_BITS_8, is signed. Narrower-than-16 widens by padding low bits
@@ -123,7 +123,7 @@ void I2SClass::end(void)
  * bit-depth converter uses. */
 int16_t I2SClass::decodeSample(const uint8_t *bytes) const
 {
-  switch (bits_)
+  switch (config_.bits)
   {
     case I2S_BITS_8:
       return (int16_t)(((int8_t)bytes[0]) << 8);
@@ -153,10 +153,10 @@ int16_t I2SClass::decodeSample(const uint8_t *bytes) const
 
 /* The inverse of decodeSample(): widens/narrows a native 16-bit hardware
  * sample out to `bytesPerSample_` little-endian bytes at the configured
- * `bits_` depth. */
+ * `config_.bits` depth. */
 void I2SClass::encodeSample(int16_t sample, uint8_t *bytes) const
 {
-  switch (bits_)
+  switch (config_.bits)
   {
     case I2S_BITS_8:
       bytes[0] = (uint8_t)(sample >> 8);
@@ -193,18 +193,18 @@ void I2SClass::encodeSample(int16_t sample, uint8_t *bytes) const
  * (re-)arming the TX interrupt so serviceIrq() drains it into the
  * hardware FIFO in the background. Blocks (spinning with interrupts
  * enabled, so serviceIrq() can actually run and make room) only once the
- * ring buffer itself is full - ringSamples_ samples ahead of hardware,
+ * ring buffer itself is full - ringCapacity_ samples ahead of hardware,
  * versus i2s.v's own much shallower hardware FIFO alone. */
 void I2SClass::txRingPush(uint32_t sample)
 {
   while (true)
   {
     noInterrupts();
-    bool hasRoom = (txRingCount_ < ringSamples_);
+    bool hasRoom = (txRingCount_ < ringCapacity_);
     if (hasRoom)
     {
       txRing_[txRingHead_] = sample;
-      txRingHead_ = (uint16_t)((txRingHead_ + 1) % ringSamples_);
+      txRingHead_ = (uint16_t)((txRingHead_ + 1) % ringCapacity_);
       txRingCount_++;
       TANGNANO20K_I2S_IRQEN_REG = TANGNANO20K_I2S_IRQEN_REG | TANGNANO20K_I2S_IRQEN_TX;
     }
@@ -227,11 +227,11 @@ bool I2SClass::rxRingPop(uint32_t *sample)
 {
   noInterrupts();
   bool hasData = (rxRingCount_ > 0);
-  bool wasFull = (rxRingCount_ == ringSamples_);
+  bool wasFull = (rxRingCount_ == ringCapacity_);
   if (hasData)
   {
     *sample = rxRing_[rxRingTail_];
-    rxRingTail_ = (uint16_t)((rxRingTail_ + 1) % ringSamples_);
+    rxRingTail_ = (uint16_t)((rxRingTail_ + 1) % ringCapacity_);
     rxRingCount_--;
   }
   interrupts();
@@ -254,32 +254,32 @@ void I2SClass::serviceIrq(void)
   while (txFree > 0 && txRingCount_ > 0)
   {
     TANGNANO20K_I2S_DAT_REG = txRing_[txRingTail_];
-    txRingTail_ = (uint16_t)((txRingTail_ + 1) % ringSamples_);
+    txRingTail_ = (uint16_t)((txRingTail_ + 1) % ringCapacity_);
     txRingCount_--;
     txFree--;
   }
   if (txRingCount_ == 0)
     TANGNANO20K_I2S_IRQEN_REG = TANGNANO20K_I2S_IRQEN_REG & ~TANGNANO20K_I2S_IRQEN_TX;
 
-  while (rxCount > 0 && rxRingCount_ < ringSamples_)
+  while (rxCount > 0 && rxRingCount_ < ringCapacity_)
   {
     rxRing_[rxRingHead_] = TANGNANO20K_I2S_DAT_RX_REG;
-    rxRingHead_ = (uint16_t)((rxRingHead_ + 1) % ringSamples_);
+    rxRingHead_ = (uint16_t)((rxRingHead_ + 1) % ringCapacity_);
     rxRingCount_++;
     rxCount--;
   }
-  if (rxRingCount_ == ringSamples_)
+  if (rxRingCount_ == ringCapacity_)
     TANGNANO20K_I2S_IRQEN_REG = TANGNANO20K_I2S_IRQEN_REG & ~TANGNANO20K_I2S_IRQEN_RX;
 }
 
 size_t I2SClass::write(uint8_t byte)
 {
-  size_t frameBytes = channels_ * bytesPerSample_;
+  size_t frameBytes = config_.channels * bytesPerSample_;
   txFrame_[txFrameLen_++] = byte;
   if (txFrameLen_ == frameBytes)
   {
     int16_t left = decodeSample(&txFrame_[0]);
-    int16_t right = (channels_ == 2) ? decodeSample(&txFrame_[bytesPerSample_]) : left;
+    int16_t right = (config_.channels == 2) ? decodeSample(&txFrame_[bytesPerSample_]) : left;
     uint32_t sample = ((uint32_t)(uint16_t)left << 16) | (uint16_t)right;
     txRingPush(sample);
     txFrameLen_ = 0;
@@ -297,7 +297,7 @@ bool I2SClass::refillRxFrame(void)
   int16_t right = (int16_t)(sample & 0xFFFF);
 
   encodeSample(left, &rxFrame_[0]);
-  if (channels_ == 2)
+  if (config_.channels == 2)
   {
     encodeSample(right, &rxFrame_[bytesPerSample_]);
     rxFrameLen_ = (uint8_t)(bytesPerSample_ * 2);
@@ -317,14 +317,14 @@ int I2SClass::available(void)
    * frames are already queued in rxRing_, with nothing left to guess at
    * (unlike the direct sample-level read(), which still blocks on
    * i2s.v's own hardware FIFO - see the class comment). */
-  if (mode_ == I2S_MODE_OUTPUT)
+  if (config_.mode == I2S_MODE_OUTPUT)
     return 0;
-  return (int)(rxFrameLen_ - rxFramePos_) + (int)rxRingCount_ * (int)(channels_ * bytesPerSample_);
+  return (int)(rxFrameLen_ - rxFramePos_) + (int)rxRingCount_ * (int)(config_.channels * bytesPerSample_);
 }
 
 int I2SClass::read(void)
 {
-  if (mode_ == I2S_MODE_OUTPUT)
+  if (config_.mode == I2S_MODE_OUTPUT)
     return -1;
   if (rxFramePos_ >= rxFrameLen_)
   {
@@ -336,7 +336,7 @@ int I2SClass::read(void)
 
 int I2SClass::peek(void)
 {
-  if (mode_ == I2S_MODE_OUTPUT)
+  if (config_.mode == I2S_MODE_OUTPUT)
     return -1;
   if (rxFramePos_ >= rxFrameLen_)
   {

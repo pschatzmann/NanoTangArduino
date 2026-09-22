@@ -8,6 +8,7 @@ menu.spi_buses=SPI Buses
 menu.i2c_buses=I2C Buses
 menu.hw_muldiv=Hardware Multiply/Divide
 menu.i2s_rx=I2S Input
+menu.pwm_audio=PWM Audio
 menu.f_cpu=Clock Speed
 
 ## Sipeed Tang Nano 20K (PicoRV32 soft-SoC)
@@ -153,6 +154,16 @@ tangnano20k.menu.i2s_rx.disabled=Disabled (Recommended)
 tangnano20k.menu.i2s_rx.disabled.build.i2s_rx=0
 tangnano20k.menu.i2s_rx.enabled=Enabled
 tangnano20k.menu.i2s_rx.enabled.build.i2s_rx=1
+
+# Tools > PWM Audio. Disabled by default: synthesizes a stereo PWM audio
+# output (gateware/src/pwm_audio.v, libraries/PWMAudio) onto GPIO16 (left)
+# and GPIO17 (right) - see docs/PERIPHERALS.md "Audio (PWM)". Same real
+# GPIO-pin cost as I2S Input, gated the same way - both pins are
+# unavailable as plain GPIO whenever this is enabled.
+tangnano20k.menu.pwm_audio.disabled=Disabled (Recommended)
+tangnano20k.menu.pwm_audio.disabled.build.pwm_audio=0
+tangnano20k.menu.pwm_audio.enabled=Enabled
+tangnano20k.menu.pwm_audio.enabled.build.pwm_audio=1
 
 # Tools > Clock Speed. Unlike every other menu on this board, this isn't a
 # software flag - it reconfigures the PLL that clocks the entire SoC

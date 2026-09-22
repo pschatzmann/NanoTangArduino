@@ -13,7 +13,9 @@
 const unsigned long sampleRate = 16000;
 
 void setup() {
-  I2S.begin(sampleRate, I2S_MODE_DUPLEX);
+  I2SConfig config = I2S.defaultConfig(I2S_MODE_DUPLEX);
+  config.sampleRate = sampleRate;
+  I2S.begin(config);
 }
 
 void loop() {

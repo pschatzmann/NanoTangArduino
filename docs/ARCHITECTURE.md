@@ -20,8 +20,8 @@ sketch.ino ──arduino-cli/IDE──> RISC-V ELF (cores/tangnano20k + api/)
   [grughuhler/picorv32_tang_nano_20k](https://github.com/grughuhler/picorv32_tang_nano_20k)),
   extended with: a free-running `systick` peripheral (`millis()`/
   `micros()`), `i2s` (MAX98357A audio, plus an optional receive path for
-  an external I2S microphone), `pwm6` (`analogWrite()` on the
-  LEDs), `spi_master` and `od_gpio2` (bit-banged I2C), `gpio_bank`
+  an external I2S microphone), `pwm_bank` (`analogWrite()`/`analogWriteFrequency()` on the
+  LEDs and GPIO pins), `spi_master` and `od_gpio2` (bit-banged I2C), `gpio_bank`
   (general-purpose expansion-header GPIO), `ws2812b`/`ws2812b_tgt` (the
   onboard addressable RGB LED), `extirq` (pin-change source for
   `attachInterrupt()` — see [Interrupts](PERIPHERALS.md#interrupts)),
@@ -67,6 +67,7 @@ for every sketch compiled against this board:
 | `ARDUINO_ARCH_TANGNANO20K` | architecture-level define, always set alongside the board one |
 | `TANGNANO20K_SPI_COUNT`  | `0`, `1` (default), or `2` - mirrors **Tools > SPI Buses**' `build.spi_count`, see [A second SPI + I2C port](PERIPHERALS.md#a-second-spi--i2c-port) |
 | `TANGNANO20K_I2C_COUNT`  | `0`, `1` (default), or `2` - mirrors **Tools > I2C Buses**' `build.i2c_count`, same menu |
+| `TANGNANO20K_PWM_AUDIO`  | `0` (default) or `1` - mirrors **Tools > PWM Audio**' `build.pwm_audio`, see [Audio (PWM)](PERIPHERALS.md#audio-pwm) |
 
 Use `#ifdef ARDUINO_TANGNANO20K` to guard code specific to this board, e.g.:
 
@@ -110,7 +111,6 @@ Also set when the corresponding `Tools >` menu option is enabled (see
 | `0x8000_0048`                | I2S control register: bit0 = PA_EN (write)         |
 | `0x8000_004C`                | I2S receive data register: `{left16,right16}` (read, blocks - Tools > I2S Input only) |
 | `0x8000_0050`                | KEY_S2 button, bit0, read-only                     |
-| `0x8000_0060`-`0x8000_0074`  | PWM duty/enable, one reg per LED channel 0-5       |
 | `0x8000_0080`                | SPI SCLK divisor register (write) - Tools > SPI Buses: One+ only |
 | `0x8000_0084`                | SPI CS register: bit0 = asserted (write) - Tools > SPI Buses: One+ only |
 | `0x8000_0088`                | SPI data register (read/write) - Tools > SPI Buses: One+ only |
@@ -130,5 +130,7 @@ Also set when the corresponding `Tools >` menu option is enabled (see
 | `0x8000_0140`-`0x8000_015C`  | AI accelerator registers (see [Peripherals](PERIPHERALS.md#ai-accelerator)) |
 | `0x8000_0160`                | I2S IRQ_ENABLE: bit0=TX room, bit1=RX data (read/write, see [Peripherals](PERIPHERALS.md#audio-i2s)) |
 | `0x8000_0164`                | I2S STATUS: bits[4:0]=TX FIFO free slots, bits[9:5]=RX FIFO count (read-only) |
+| `0x8000_0180`-`0x8000_01CC`  | PWM DUTY/CFG register pairs, channels 0-5 = LEDs, 6-9 = GPIO pool (see `pwm_bank.v`) |
+| `0x8000_0170`-`0x8000_017C`  | PWM audio PERIOD/SAMPLE_DIV/DATA/CTRL (Tools > PWM Audio only - see [Peripherals](PERIPHERALS.md#audio-pwm)) |
 | `0x1000_0000`-`0x107f_ffff`  | Embedded SDRAM, 8MB (heap - see [Peripherals](PERIPHERALS.md#heap--malloc)) |
 | `0x2000_0000`-`0x207f_ffff`  | Onboard SPI flash, memory-mapped read-only (boot/constant data - see [Peripherals](PERIPHERALS.md#flash)) |

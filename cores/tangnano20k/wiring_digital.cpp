@@ -18,6 +18,8 @@ static inline bool isExpansionGpio(pin_size_t pinNumber)
 
 void pinMode(pin_size_t pinNumber, PinMode mode)
 {
+  tangnano20k_pwm_release(pinNumber); // Leaving PWM mode, see below.
+
   if (isExpansionGpio(pinNumber)) {
     uint32_t mask = 1UL << (pinNumber - TANGNANO20K_PIN_GPIO_BASE);
     bool asOutput = (mode == OUTPUT || mode == OUTPUT_OPENDRAIN);
@@ -30,16 +32,16 @@ void pinMode(pin_size_t pinNumber, PinMode mode)
 
   /* The LED register is output-only in hardware and KEY2 is input-only;
    * accept any mode without error so sketches written for real Arduino
-   * boards still compile. Switch an LED back to plain digital mode, since
-   * on a real Arduino calling pinMode()/digitalWrite() after analogWrite()
-   * stops the PWM. */
+   * boards still compile. (PWM was already stopped above, since on a real
+   * Arduino calling pinMode()/digitalWrite() after analogWrite() stops
+   * the PWM.) */
   (void)mode;
-  if (pinNumber < TANGNANO20K_NUM_LEDS)
-    TANGNANO20K_PWM_REG(pinNumber) = 0;
 }
 
 void digitalWrite(pin_size_t pinNumber, PinStatus status)
 {
+  tangnano20k_pwm_release(pinNumber); // Leaving PWM mode, see pinMode() above.
+
   if (isExpansionGpio(pinNumber)) {
     uint32_t mask = 1UL << (pinNumber - TANGNANO20K_PIN_GPIO_BASE);
     if (status == HIGH)
@@ -57,8 +59,6 @@ void digitalWrite(pin_size_t pinNumber, PinStatus status)
 
   if (pinNumber >= TANGNANO20K_NUM_LEDS)
     return;
-
-  TANGNANO20K_PWM_REG(pinNumber) = 0; // Leaving PWM mode, see pinMode() above.
 
   uint32_t mask = 1UL << pinNumber;
   if (status == HIGH)

@@ -6,8 +6,9 @@
  * countdown timer, irq[1]/irq[2] are ebreak/bus-error (unused here),
  * irq[3] is gateware/src/extirq.v, a pin-change source for
  * attachInterrupt() covering the 21 GPIO pins plus KEY_S2 (BTN1), irq[4]
- * is dma_engine.v's async-copy completion, and irq[5] is i2s.v's FIFO
- * refill/drain source (see the I2S callback below). See
+ * is dma_engine.v's async-copy completion, irq[5] is i2s.v's FIFO
+ * refill/drain source (see the I2S callback below), and irq[6] is
+ * pwm_audio.v's FIFO refill source (Tools > PWM Audio only). See
  * cores/tangnano20k/irq_vec.S for the entry trampoline and
  * docs/PERIPHERALS.md "Interrupts" for the full picture.
  *
@@ -254,6 +255,16 @@ extern "C" void tangnano20k_i2s_set_irq_callback(void (*callback)(void))
   i2sIrqCallback = callback;
 }
 
+/* --- PWM audio FIFO refill callback -------------------------------------- */
+
+/* Same pattern as the I2S callback above, for libraries/PWMAudio. */
+static void (*pwmAudioIrqCallback)(void) = nullptr;
+
+extern "C" void tangnano20k_pwm_audio_set_irq_callback(void (*callback)(void))
+{
+  pwmAudioIrqCallback = callback;
+}
+
 /* --- IRQ dispatcher, called from irq_vec.S ------------------------------- */
 
 extern "C" void tangnano20k_irq_dispatch(uint32_t *regs, uint32_t irqs)
@@ -314,5 +325,10 @@ extern "C" void tangnano20k_irq_dispatch(uint32_t *regs, uint32_t irqs)
   if (irqs & (1UL << 5)) {
     if (i2sIrqCallback)
       i2sIrqCallback();
+  }
+
+  if (irqs & (1UL << 6)) {
+    if (pwmAudioIrqCallback)
+      pwmAudioIrqCallback();
   }
 }

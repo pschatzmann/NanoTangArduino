@@ -8,6 +8,11 @@
  * at reset), one output register (driven value when that bit's direction
  * is output), and one read-only input register (actual pin level,
  * readable regardless of direction).
+ *
+ * `override`/`override_value` let another peripheral take over a pin
+ * without software touching dir/out: while override[i] is set, pin i is
+ * an output driving override_value[i] (used by pwm_bank.v's GPIO PWM
+ * pool for analogWrite()). The registers themselves are unaffected.
  */
 
 module gpio_bank
@@ -24,6 +29,9 @@ module gpio_bank
    input wire [31:0]       wdata,
    output wire             ready,
    output wire [31:0]      rdata,
+
+   input wire [WIDTH-1:0]  override,
+   input wire [WIDTH-1:0]  override_value,
 
    inout wire [WIDTH-1:0]  gpio
    );
@@ -55,7 +63,8 @@ module gpio_bank
    genvar i;
    generate
      for (i = 0; i < WIDTH; i = i + 1) begin : bit
-       assign gpio[i] = dir[i] ? out[i] : 1'bz;
+       assign gpio[i] = override[i] ? override_value[i] :
+                        dir[i] ? out[i] : 1'bz;
      end
    endgenerate
 

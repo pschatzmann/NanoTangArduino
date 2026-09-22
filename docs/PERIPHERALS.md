@@ -3,14 +3,41 @@
 ## Digital I/O and PWM
 
 Pins 0-5 are the 6 onboard LEDs: `pinMode`/`digitalWrite`/`digitalRead`
-work, plus `analogWrite()` (real 8-bit PWM, `gateware/src/pwm6.v`) — calling
-it switches that LED into PWM mode; a later `digitalWrite()`/`pinMode()`
+work, plus `analogWrite()` (real hardware PWM, `gateware/src/pwm_bank.v`) —
+calling it switches that LED into PWM mode; a later `digitalWrite()`/`pinMode()`
 call switches it back to plain on/off, matching real-Arduino behavior. Pin
 6 (`BTN1`) is the board's second button (KEY_S2), `digitalRead`-only.
 Pins 14-35 (`GPIO0`-`GPIO21`) are real general-purpose I/O — see
 [General GPIO](#general-gpio) below. There's no `analogRead()` — the board
 has no ADC wired to any pin, so that function is stubbed to always
 return 0.
+
+### PWM on GPIO pins and `analogWriteFrequency()`
+
+`analogWrite()` also works on `GPIO0`-`GPIO20`, through a pool of **4**
+PWM channels shared by all GPIO pins. The first `analogWrite()` to a pin
+takes a free channel, and `pinMode()`/`digitalWrite()` on that pin gives
+it back. With all 4 in use, `analogWrite()` on a fifth pin falls back to
+plain on/off (HIGH for values >= 128), as AVR Arduinos do on non-PWM
+pins. The 6 LEDs have their own channels and don't count against the
+pool.
+
+`analogWriteFrequency(pin, hz)` sets the frequency per pin, independently
+for every channel. It takes effect immediately if the pin is already in
+PWM mode, otherwise at its next `analogWrite()`.
+
+| | 27MHz clock | Formula |
+|---|---|---|
+| Default (`hz` = 0) | 105.5kHz | `F_CPU/256` (unchanged from before) |
+| Maximum | 13.5MHz | `F_CPU/2` |
+| Minimum | ~1.6Hz | `F_CPU/2^24` |
+
+Values stay Arduino's 0-255 at any frequency (0 = always low, 255 =
+always high), but the real resolution is `log2(F_CPU/hz)` bits. Above the
+default frequency, neighboring values start mapping to the same duty
+cycle, and at the maximum only 0%/50%/100% remain. A new value takes
+effect at the start of the next PWM period, so no pulse is ever cut
+short. See `libraries/Core/examples/PWMFrequency` (includes a 50Hz servo).
 
 ## General GPIO
 
@@ -47,8 +74,8 @@ that connector/bus.
 | GPIO13 | 41 | RGB LCD connector: LCD_R4 |
 | GPIO14 | 48 | RGB LCD connector: LCD_DE |
 | GPIO15 | 49 | RGB LCD connector: LCD_BL (backlight) |
-| GPIO16 | 86 | — |
-| GPIO17 | 72 | — |
+| GPIO16 | 86 | PWM audio left (Tools > PWM Audio) |
+| GPIO17 | 72 | PWM audio right (Tools > PWM Audio) |
 | GPIO18 | 71 | — |
 | GPIO19 | 53 | HDMI connector: EDID_CLK |
 | GPIO20 | 52 | HDMI connector: EDID_DAT |
@@ -80,8 +107,16 @@ reliably achievable in C at this core's default 27MHz. See
 ## Audio (I2S)
 
 `#include <I2S.h>` (`libraries/I2S/`, backed by `gateware/src/i2s.v`).
-`I2S.begin(sampleRate, mode, channels, bits, ringSamples)` configures
-the shared BCLK divisor for `sampleRate * 32` (the hardware always moves
+`I2S.begin(config)` takes an `I2SConfig` - get one from
+`I2S.defaultConfig(mode)`, adjust its fields, and pass it in:
+
+```cpp
+I2SConfig config = I2S.defaultConfig(I2S_MODE_DUPLEX);
+config.sampleRate = 44100;
+I2S.begin(config);
+```
+
+`sampleRate` (default `16000`) configures the shared BCLK divisor for `sampleRate * 32` (the hardware always moves
 16-bit samples, regardless of `bits` below) - this same clock paces both
 transmit and receive, regardless of `mode`. `mode` is one of
 `I2S_MODE_OUTPUT` (default), `I2S_MODE_INPUT`, or `I2S_MODE_DUPLEX` - it
@@ -97,6 +132,7 @@ channels and reads only expose the left channel. `ringSamples` (default
 "Buffering and interrupts" below; it's heap-allocated (4 bytes/sample,
 from this core's SDRAM heap), and `I2S.ringSamples()` reports the size
 actually in effect if an oversized request fell back to a smaller one.
+`I2S.config()` returns the full configuration actually in effect.
 
 `I2SClass` is an `arduino::Stream` - `write(uint8_t)`/`read()`/`peek()`/
 `available()` (plus `Print`'s bulk `write(const uint8_t*, size_t)`) are
@@ -129,7 +165,7 @@ disarming itself if the ring fills up (freed again the next time
 in bursts, or skip a few `loop()` iterations doing other work, without
 needing to hit the exact sample rate every time - up to `ringSamples`
 (plus the hardware FIFO's own 16) of slack in either direction; raise it
-in `begin()` for a sketch with bursty timing, or lower it to save SDRAM
+in `I2SConfig` for a sketch with bursty timing, or lower it to save SDRAM
 heap if `loop()` is reliably fast and regular. `available()` is
 genuinely non-blocking, reporting exactly what's already been captured
 in the background rather than assuming more is always imminent.
@@ -168,6 +204,50 @@ I2S Input is left at its default, Disabled.
 
 The exact bit alignment of the frame follows the Philips/I2S convention but
 is unverified on real hardware and may need a one-`BCLK` tweak.
+
+## Audio (PWM)
+
+`#include <PWMAudio.h>` (`libraries/PWMAudio/`, backed by
+`gateware/src/pwm_audio.v`). Needs **Tools > PWM Audio: Enabled**
+(disabled by default, the same opt-in pattern as I2S Input): it claims
+`GPIO16` (left) and `GPIO17` (right), removing both from the
+general-purpose GPIO pool. `PWMAudio.h` raises a compile error if the
+menu is left disabled, and `begin()` returns `false` on a bitstream built
+without it.
+
+```cpp
+PWMAudioConfig config = PWMAudio.defaultConfig();
+config.sampleRate = 44100; // default
+config.channels = 2;       // default; 1 = mono, driven on both pins
+config.pwmRate = 50000;    // default, PWM carrier frequency in Hz
+PWMAudio.begin(config);
+```
+
+Each pin carries a `pwmRate` square wave whose duty cycle follows the
+signal, so it needs a low-pass filter before a speaker. A 1k resistor
+plus a 10nF capacitor to ground on each pin, feeding an amplifier or
+headphones, works. Resolution is `log2(CLK_FREQ / pwmRate)` bits, about
+9 bits at 50kHz and 27MHz, so a lower `pwmRate` gives more resolution
+but is harder to filter out. Both rates are integer dividers of the
+system clock: 44100 Hz at 27MHz actually runs at 44118 Hz.
+
+The API is the output half of [I2S](#audio-i2s)'s: `PWMAudioClass` is an
+`arduino::Stream` that takes little-endian signed 16-bit PCM,
+left-then-right, through `write()`. `availableForWrite()` reports free
+buffer space; `read()`/`available()` are always empty. Samples go
+through a `ringSamples`-deep software ring buffer (default `64`, SDRAM
+heap) into a 16-sample hardware FIFO. The hardware pops one sample per
+sample period and scales it onto the PWM period itself, so the CPU never
+multiplies per sample. An interrupt (`irq[6]`) refills the FIFO whenever
+it drops to half full, so each interrupt pushes at least 8 samples. If
+the FIFO runs dry, the last level is held. New duty values only take
+effect at the start of a PWM period, so no pulse is ever cut short. See
+`libraries/PWMAudio/examples/PWMAudioToneTest`.
+
+| Object | Menu | Function | Pin printed on the device |
+|---|---|---|---|
+| `PWMAudio` | Tools > PWM Audio: Enabled | Left | 86 (`GPIO16`) |
+| `PWMAudio` | Tools > PWM Audio: Enabled | Right | 72 (`GPIO17`) |
 
 ## SPI, I2C (`Wire`), and the SD card
 

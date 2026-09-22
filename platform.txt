@@ -29,7 +29,7 @@ compiler.mabi={build.mabi}
 # explicitly opt in, not just by typing #include <SD.h>.
 build.sd_defines=
 
-build.defines=-DF_CPU={build.f_cpu} -DARDUINO=10819 -DARDUINO_{build.board} -DARDUINO_ARCH_TANGNANO20K -DTANGNANO20K_SPI_COUNT={build.spi_count} -DTANGNANO20K_I2C_COUNT={build.i2c_count} {build.sd_defines}
+build.defines=-DF_CPU={build.f_cpu} -DARDUINO=10819 -DARDUINO_{build.board} -DARDUINO_ARCH_TANGNANO20K -DTANGNANO20K_SPI_COUNT={build.spi_count} -DTANGNANO20K_I2C_COUNT={build.i2c_count} -DTANGNANO20K_PWM_AUDIO={build.pwm_audio} {build.sd_defines}
 
 # Overridden per-selection by the Tools > Optimize board menu (see
 # boards.txt); this is the fallback if a sketch/IDE somehow doesn't set it.
@@ -70,6 +70,13 @@ build.hw_muldiv=0
 # external I2S microphone - see tools/build_bitstream.py and
 # docs/PERIPHERALS.md "Audio (I2S)".
 build.i2s_rx=0
+
+# Overridden by the Tools > PWM Audio board menu (see boards.txt): "0"
+# (default) leaves GPIO16/GPIO17 as plain GPIO; "1" synthesizes the PWM
+# audio peripheral onto them - see tools/build_bitstream.py and
+# docs/PERIPHERALS.md "Audio (PWM)". Also exported to sketches as
+# TANGNANO20K_PWM_AUDIO (see build.defines above).
+build.pwm_audio=0
 
 # Overridden by the Tools > Clock Speed board menu (see boards.txt), which
 # also overrides build.f_cpu in lockstep - all four move together, same
@@ -160,7 +167,7 @@ recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.f
 # build (bake the program into SRAM init files, then yosys -> nextpnr ->
 # gowin_pack). Expect this to take noticeably longer than a normal
 # Arduino "compile" step - see docs/BUILDING.md.
-recipe.objcopy.hex.pattern=python3 "{runtime.platform.path}/tools/build_bitstream.py" "{build.path}/{build.project_name}.elf" "{compiler.path}{compiler.objcopy.cmd}" "{build.path}/fpga" "{build.ai_accel}" "{build.boot_flash}" "{build.spi_count}" "{build.i2c_count}" "{build.hw_muldiv}" "{build.i2s_rx}" "{build.clk_freq_hz}" "{build.pll_idiv}" "{build.pll_fbdiv}" "{build.pll_odiv}"
+recipe.objcopy.hex.pattern=python3 "{runtime.platform.path}/tools/build_bitstream.py" "{build.path}/{build.project_name}.elf" "{compiler.path}{compiler.objcopy.cmd}" "{build.path}/fpga" "{build.ai_accel}" "{build.boot_flash}" "{build.spi_count}" "{build.i2c_count}" "{build.hw_muldiv}" "{build.i2s_rx}" "{build.clk_freq_hz}" "{build.pll_idiv}" "{build.pll_fbdiv}" "{build.pll_odiv}" "{build.pwm_audio}"
 
 recipe.size.pattern="{compiler.path}{compiler.size.cmd}" -A "{build.path}/{build.project_name}.elf"
 

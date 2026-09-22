@@ -3,7 +3,7 @@
 a program into the gateware's SRAM initialization files and running the
 open-source FPGA flow (yosys -> nextpnr-himbaechel -> gowin_pack).
 
-Usage: build_bitstream.py <prog.elf> <objcopy> <build_dir> [ai_accel] [boot_flash] [spi_count] [i2c_count] [hw_muldiv] [i2s_rx] [clk_freq_hz] [pll_idiv] [pll_fbdiv] [pll_odiv]
+Usage: build_bitstream.py <prog.elf> <objcopy> <build_dir> [ai_accel] [boot_flash] [spi_count] [i2c_count] [hw_muldiv] [i2s_rx] [clk_freq_hz] [pll_idiv] [pll_fbdiv] [pll_odiv] [pwm_audio]
 
 ai_accel: "1" to synthesize the AI accelerator (gateware/src/ai_accel_bus.v
 and friends, integrated from NanoTangAI) into the bitstream, per the
@@ -88,6 +88,14 @@ software baud-rate/timing math in build.f_cpu from the gateware's real
 clock) - boards.txt drives all four from the one menu choice, same pattern
 as hw_muldiv's build.march/build.libgcc_path. Defaults (27000000/0/0/32)
 match the original fixed, non-configurable clock this core shipped with.
+
+pwm_audio: "1" to synthesize the PWM audio peripheral (gateware/src/
+pwm_audio.v, Tools > PWM Audio) onto GPIO16 (left)/GPIO17 (right); "0"
+(default) leaves those pins as plain GPIO and libraries/PWMAudio's begin()
+reports failure. Same real GPIO-pin cost as i2s_rx, gated the same way -
+see docs/PERIPHERALS.md "Audio (PWM)". Last on the command line (rather
+than next to i2s_rx) only so every existing positional argument keeps its
+index.
 """
 import hashlib
 import shutil
@@ -114,7 +122,8 @@ GATEWARE_SOURCES = [
     "systick.v",
     "tang_leds.v",
     "i2s.v",
-    "pwm6.v",
+    "pwm_bank.v",
+    "pwm_audio.v",
     "spi_master.v",
     "od_gpio2.v",
     "gpio_bank.v",
@@ -141,7 +150,7 @@ def run(cmd, **kwargs):
 
 
 def core_bitstream_cache_key(boot_image_path, ai_accel, spi_count, i2c_count, hw_muldiv, i2s_rx,
-                              clk_freq_hz, pll_idiv, pll_fbdiv, pll_odiv):
+                              clk_freq_hz, pll_idiv, pll_fbdiv, pll_odiv, pwm_audio):
     """Hashes everything that can affect a Boot Mode: Flash core bitstream,
     independent of sketch content: the fixed core image (irq_vec.S/boot.S,
     the only trace of those build_bitstream.py otherwise never reads),
@@ -155,13 +164,14 @@ def core_bitstream_cache_key(boot_image_path, ai_accel, spi_count, i2c_count, hw
     h.update(
         f"ai_accel={int(ai_accel)},spi_count={spi_count},i2c_count={i2c_count},"
         f"hw_muldiv={int(hw_muldiv)},i2s_rx={int(i2s_rx)},clk_freq_hz={clk_freq_hz},"
-        f"pll_idiv={pll_idiv},pll_fbdiv={pll_fbdiv},pll_odiv={pll_odiv}".encode()
+        f"pll_idiv={pll_idiv},pll_fbdiv={pll_fbdiv},pll_odiv={pll_odiv},"
+        f"pwm_audio={int(pwm_audio)}".encode()
     )
     return h.hexdigest()
 
 
 def main():
-    if len(sys.argv) not in (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14):
+    if len(sys.argv) not in (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15):
         sys.stderr.write(__doc__)
         return 1
 
@@ -180,6 +190,7 @@ def main():
     pll_idiv = int(sys.argv[11]) if len(sys.argv) >= 12 else 0
     pll_fbdiv = int(sys.argv[12]) if len(sys.argv) >= 13 else 0
     pll_odiv = int(sys.argv[13]) if len(sys.argv) >= 14 else 32
+    pwm_audio = len(sys.argv) >= 15 and sys.argv[14] == "1"
     build_dir.mkdir(parents=True, exist_ok=True)
 
     # FLASH_DATA payload, independent of boot_flash - empty (0 bytes) if the
@@ -213,7 +224,7 @@ def main():
         ])
 
         cache_key = core_bitstream_cache_key(bin_path, ai_accel, spi_count, i2c_count, hw_muldiv, i2s_rx,
-                                              clk_freq_hz, pll_idiv, pll_fbdiv, pll_odiv)
+                                              clk_freq_hz, pll_idiv, pll_fbdiv, pll_odiv, pwm_audio)
         cached_fs = CACHE_DIR / f"{cache_key}.fs"
         fs_path = build_dir / "prog.fs"
         if cached_fs.exists():
@@ -261,6 +272,8 @@ def main():
         defines.append("-DWITH_HW_MULDIV")
     if i2s_rx:
         defines.append("-DWITH_I2S_RX")
+    if pwm_audio:
+        defines.append("-DWITH_PWM_AUDIO")
     # Clock Speed menu - always passed explicitly (rather than relying on
     # the Verilog `ifndef defaults) so the PLL dividers and CLK_FREQ can
     # never drift out of step with each other.

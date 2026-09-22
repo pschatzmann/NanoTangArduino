@@ -188,6 +188,18 @@ general-purpose GPIO pool.
 | Disabled (default) | `:i2s_rx=disabled` |
 | Enabled | `:i2s_rx=enabled` |
 
+### PWM Audio
+
+See [Peripherals: Audio (PWM)](PERIPHERALS.md#audio-pwm). **Disabled by
+default** - enabling it synthesizes the PWM audio peripheral onto
+`GPIO16` (left) and `GPIO17` (right), removing both pins from the
+general-purpose GPIO pool.
+
+| Option | FQBN suffix |
+|---|---|
+| Disabled (default) | `:pwm_audio=disabled` |
+| Enabled | `:pwm_audio=enabled` |
+
 ## Verifying changes
 
 ```sh
