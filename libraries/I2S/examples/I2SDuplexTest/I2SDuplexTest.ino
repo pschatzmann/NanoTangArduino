@@ -10,7 +10,7 @@
 
 #include <I2S.h>
 
-const unsigned long sampleRate = 16000;
+const unsigned long sampleRate = 44100;
 
 void setup() {
   I2SConfig config = I2S.defaultConfig(I2S_MODE_DUPLEX);

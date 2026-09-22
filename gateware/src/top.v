@@ -13,7 +13,7 @@
  *   0x8000_0008                  UART clock divisor register
  *   0x8000_000c                  UART data register
  *   0x8000_0020                  systick free-running counter (read-only)
- *   0x8000_0040                  I2S BCLK divisor register (write)
+ *   0x8000_0040                  I2S BCLK phase increment register (write)
  *   0x8000_0044                  I2S transmit data register: {left16,right16} (write)
  *   0x8000_0048                  I2S control register: bit0 = PA_EN (write)
  *   0x8000_004c                  I2S receive data register: {left16,right16}
@@ -27,9 +27,9 @@
  *   0x8000_0170 - 0x8000_017c    PWM audio PERIOD/SAMPLE_DIV/DATA/CTRL
  *                                 (Tools > PWM Audio only - see pwm_audio.v)
  *   0x8000_0050                  KEY_S2 button, bit0, read-only
- *   0x8000_0180 - 0x8000_01cc    PWM DUTY/CFG register pairs, one per
- *                                 channel: 0-5 = LEDs, 6-9 = GPIO pool
- *                                 (see pwm_bank.v)
+ *   0x8000_0180 - 0x8000_01ac    PWM DUTY/CFG register pairs, one per
+ *                                 channel 0-5, each routable to any LED
+ *                                 or GPIO pin (see pwm_bank.v)
  *   0x8000_0080                  SPI SCLK divisor register (write)
  *   0x8000_0084                  SPI CS register: bit0 = asserted (write)
  *   0x8000_0088                  SPI data register (read/write)
@@ -265,8 +265,8 @@ module top
    wire              key2_sel;
    wire              pwm_sel;
    wire              pwm_ready;
-   wire [5:0]        pwm_out;
-   wire [5:0]        pwm_enabled;
+   wire [5:0]        pwm_led_override;
+   wire [5:0]        pwm_led_value;
    wire [20:0]       pwm_gpio_override;
    wire [20:0]       pwm_gpio_value;
    wire [5:0]        leds_muxed;
@@ -404,9 +404,10 @@ module top
                       i2c2_sel     ? i2c2_rdata :
                       pwm_audio_sel ? pwm_audio_rdata : 32'h0;
 
-   // Per-LED mux: PWM output when analogWrite() has enabled that channel,
+   // Per-LED mux: PWM output while analogWrite() has a channel on that LED,
    // else the plain digital value from tang_leds.
-   assign leds_muxed = (pwm_out & pwm_enabled) | (leds_data_o[5:0] & ~pwm_enabled);
+   assign leds_muxed = (pwm_led_value & pwm_led_override) |
+                       (leds_data_o[5:0] & ~pwm_led_override);
    assign leds = ~leds_muxed; // Onboard LEDs are active-low.
 
    reset_control reset_controller
@@ -466,10 +467,10 @@ module top
 `endif
       );
 
-   // analogWrite()/analogWriteFrequency(): 6 LED channels plus a pool of
-   // 4 channels routed onto whichever GPIO pins software assigns them to
-   // (through gpio_bank's override inputs below).
-   pwm_bank #(.LED_CHANNELS(6), .GPIO_CHANNELS(4), .GPIO_WIDTH(21)) pwm
+   // analogWrite()/analogWriteFrequency(): a pool of 6 channels routed
+   // onto whichever LED or GPIO pins software assigns them to (LEDs via
+   // the per-bit mux below, GPIO via gpio_bank's override inputs).
+   pwm_bank #(.CHANNELS(6), .LED_WIDTH(6), .GPIO_WIDTH(21)) pwm
      (
       .clk(clk_sys),
       .reset_n(reset_n),
@@ -478,8 +479,8 @@ module top
       .wstrb(mem_wstrb),
       .wdata(mem_wdata),
       .pwm_ready(pwm_ready),
-      .led_out(pwm_out),
-      .led_enabled(pwm_enabled),
+      .led_override(pwm_led_override),
+      .led_value(pwm_led_value),
       .gpio_override(pwm_gpio_override),
       .gpio_value(pwm_gpio_value)
       );

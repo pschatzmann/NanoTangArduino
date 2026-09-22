@@ -2,13 +2,15 @@
 // part of the AI accelerator integration - see docs/PERIPHERALS.md "AI accelerator".
 // License: Apache-2.0 (see that project's library.properties/README;
 // same author as this repo). One deliberate deviation from the vendored
-// original: a `(* ram_style = "block" *)` attribute on `result_mem` below
-// (see its own comment) - without it, yosys maps this 128-entry array
-// onto distributed LUT logic instead of a Gowin BRAM block, the same
-// BRAM-inference gap gateware/src/sram8bit.v needed the identical fix
-// for (see docs/KNOWN_LIMITATIONS.md) - confirmed as the actual cause of
-// a real `nextpnr-himbaechel` "no BELs remaining" placement failure when
-// Tools > AI Accelerator is combined with other LUT-hungry peripherals.
+// original: the result memory is split into one small memory per row
+// (see `g_result` below). The original single `result_mem` was written by
+// up to ROWS rows in the same cycle, from inside the async-reset FSM
+// block - neither of which any Gowin RAM primitive supports - so yosys
+// silently built it from ROWS*MAX_K*32 flip-flops plus a 128-way read
+// mux, whatever ram_style attribute it carried. Per-row memories have one
+// write port each and map onto LUT RAM. Results are unchanged.
+// See also byte_interleave_ram.v's deviation, and ai_accel_bus.v for the
+// LANES/WORDS values this core instantiates the engine with.
 //
 `timescale 1ns / 1ps
 //
@@ -171,11 +173,24 @@ module dot_product_engine #(
   // stale by one cycle relative to when S_MAC samples it.
   wire fsm_en = (state == S_LOAD);
 
-  // result memory: ROWS*MAX_K entries, indexed [row*MAX_K + tap].
-  // `ram_style = "block"` - see this file's header comment.
-  (* ram_style = "block" *)
-  reg signed [31:0] result_mem [0:(ROWS*MAX_K)-1];
-  assign result_rd_data = result_mem[result_rd_addr];
+  // result memory: ROWS*MAX_K entries, indexed [row*MAX_K + tap] -
+  // one MAX_K-entry memory per row, see this file's header comment.
+  // Assumes ROWS and MAX_K are powers of two (row = the index's upper bits).
+  localparam integer LOG2K    = $clog2(MAX_K);
+  localparam integer LOG2ROWS = $clog2(ROWS);
+  wire signed [31:0] result_row_data [0:ROWS-1];
+
+  generate
+    for (r = 0; r < ROWS; r = r + 1) begin : g_result
+      reg signed [31:0] mem [0:MAX_K-1];
+      always @(posedge clk)
+        if (state == S_STORE && r < rows_r)
+          mem[tap[LOG2K-1:0]] <= acc[r];
+      assign result_row_data[r] = mem[result_rd_addr[LOG2K-1:0]];
+    end
+  endgenerate
+
+  assign result_rd_data = result_row_data[result_rd_addr[LOG2K +: LOG2ROWS]];
 
   integer ri;
 
@@ -229,8 +244,7 @@ module dot_product_engine #(
         end
 
         S_STORE: begin
-          for (ri = 0; ri < ROWS; ri = ri + 1)
-            if (ri < rows_r) result_mem[ri*MAX_K + tap] <= acc[ri];
+          // acc[] is written into g_result's per-row memories this cycle.
           if (tap == k_r - 1'b1) begin
             state <= S_DONE;
           end else begin

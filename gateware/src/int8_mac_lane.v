@@ -1,7 +1,13 @@
-// Vendored unmodified from ../../../NanoTangAI/gateware/rtl/int8_mac_lane.v,
+// Vendored from ../../../NanoTangAI/gateware/rtl/int8_mac_lane.v,
 // part of the AI accelerator integration - see docs/PERIPHERALS.md "AI accelerator".
 // License: Apache-2.0 (see that project's library.properties/README;
-// same author as this repo).
+// same author as this repo). One deliberate deviation from the vendored
+// original: under synthesis the multiply uses a Gowin MULT9X9 DSP block
+// instead of `*`. This yosys (0.33) has no DSP inference for Gowin, and
+// maps each 8x8 signed `*` onto ~250 LUT4s plus muxes - with 32 lanes
+// that alone overflowed the GW2AR-18. Simulation (no SYNTHESIS define)
+// keeps the plain `*`, since yosys's MULT9X9 is a blackbox with no model.
+// The product is still registered in fabric exactly as before.
 //
 `timescale 1ns / 1ps
 //
@@ -22,11 +28,29 @@ module int8_mac_lane (
     output reg   signed [16:0] prod  // max |a*b| = 128*128 = 16384, fits comfortably in 17 bits
 );
 
+`ifdef SYNTHESIS
+  wire [17:0] mult_out;
+  MULT9X9 #(
+      .AREG(1'b0), .BREG(1'b0), .OUT_REG(1'b0), .PIPE_REG(1'b0),
+      .ASIGN_REG(1'b0), .BSIGN_REG(1'b0), .SOA_REG(1'b0)
+  ) u_mult (
+      .A({a[7], a}), .B({b[7], b}),   // sign-extended to 9 bits
+      .SIA(9'd0), .SIB(9'd0),
+      .ASIGN(1'b1), .BSIGN(1'b1),
+      .ASEL(1'b0), .BSEL(1'b0),       // use A/B, not the shift-chain inputs
+      .CE(1'b1), .CLK(clk), .RESET(1'b0),
+      .DOUT(mult_out),
+      .SOA(), .SOB()
+  );
+`else
+  wire signed [17:0] mult_out = $signed(a) * $signed(b);
+`endif
+
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       prod <= 17'sd0;
     end else if (en) begin
-      prod <= $signed(a) * $signed(b);
+      prod <= mult_out[16:0];
     end
   end
 

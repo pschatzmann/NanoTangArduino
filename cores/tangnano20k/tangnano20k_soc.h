@@ -33,9 +33,8 @@
 #define TANGNANO20K_PWM_AUDIO_DAT_REG    (*(volatile uint32_t *)0x80000178UL)
 #define TANGNANO20K_PWM_AUDIO_CTRL_REG   (*(volatile uint32_t *)0x8000017CUL)
 #define TANGNANO20K_KEY2_REG     (*(volatile uint32_t *)0x80000050UL)
-/* gateware/src/pwm_bank.v: a DUTY/CFG register pair per channel -
- * channels 0-5 are LEDs 0-5, channels 6-9 are a pool assignable to any
- * GPIO pin. See wiring_analog.cpp. */
+/* gateware/src/pwm_bank.v: a DUTY/CFG register pair per channel, each
+ * channel routable to any LED or GPIO pin. See wiring_analog.cpp. */
 #define TANGNANO20K_PWM_DUTY_REG(ch) (*(volatile uint32_t *)(0x80000180UL + 8UL * (ch)))
 #define TANGNANO20K_PWM_CFG_REG(ch)  (*(volatile uint32_t *)(0x80000184UL + 8UL * (ch)))
 #define TANGNANO20K_SPI_DIV_REG  (*(volatile uint32_t *)0x80000080UL)
@@ -119,16 +118,29 @@
  * default SRAM boot mode. */
 #define FLASH_DATA __attribute__((section(".flash_data")))
 
+/* Arduino's usual spelling for the same thing: `const T x[] PROGMEM`
+ * lands in flash exactly like FLASH_DATA. ArduinoCore-API's AVR
+ * compatibility header (api/deprecated-avr-comp/avr/pgmspace.h, pulled
+ * in by String.h before this file) defines PROGMEM as empty; redefine it
+ * here rather than editing that vendored header. Its include guard keeps
+ * a later #include <avr/pgmspace.h> from resetting this. pgm_read_*()/
+ * memcpy_P() etc. from that header already work unchanged - they're plain
+ * pointer reads, and the flash window is ordinary memory-mapped address
+ * space. PSTR()/F() strings are NOT moved (PSTR is defined there as a
+ * plain literal), so Serial.print(F("...")) still reads from SRAM. */
+#undef PROGMEM
+#define PROGMEM FLASH_DATA
+
 #define TANGNANO20K_I2S_CTRL_PA_EN (1UL << 0)
 #define TANGNANO20K_I2S_IRQEN_TX   (1UL << 0) // TX FIFO has room
 #define TANGNANO20K_I2S_IRQEN_RX   (1UL << 1) // RX FIFO has a sample
 #define TANGNANO20K_I2S_STATUS_TX_FREE(status)  ((status) & 0x1FUL)
 #define TANGNANO20K_I2S_STATUS_RX_COUNT(status) (((status) >> 5) & 0x1FUL)
 #define TANGNANO20K_PWM_ENABLE     (1UL << 31) // DUTY register
-#define TANGNANO20K_PWM_CFG(period, prescale, gpio) \
-  ((uint32_t)(period) | ((uint32_t)(prescale) << 16) | ((uint32_t)(gpio) << 24))
-#define TANGNANO20K_PWM_LED_CHANNELS  6
-#define TANGNANO20K_PWM_GPIO_CHANNELS 4
+/* `target`: 0-5 = LED0-LED5, 6-26 = GPIO0-GPIO20. */
+#define TANGNANO20K_PWM_CFG(period, prescale, target) \
+  ((uint32_t)(period) | ((uint32_t)(prescale) << 16) | ((uint32_t)(target) << 24))
+#define TANGNANO20K_PWM_CHANNELS 6
 /* PWM audio CTRL register: write bits. */
 #define TANGNANO20K_PWM_AUDIO_CTRL_ENABLE (1UL << 0)
 #define TANGNANO20K_PWM_AUDIO_CTRL_IRQEN  (1UL << 1) // FIFO at most half full

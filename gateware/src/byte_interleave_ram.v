@@ -1,7 +1,20 @@
-// Vendored unmodified from ../../../NanoTangAI/gateware/rtl/byte_interleave_ram.v,
+// Vendored from ../../../NanoTangAI/gateware/rtl/byte_interleave_ram.v,
 // part of the AI accelerator integration - see docs/PERIPHERALS.md "AI accelerator".
 // License: Apache-2.0 (see that project's library.properties/README;
-// same author as this repo).
+// same author as this repo). One deliberate deviation from the vendored
+// original: the LANES byte-wide lane memories are a single LANES*8-bit
+// wide single-port memory with per-byte writes instead of LANES separate
+// arrays. Separate arrays are each far too small for a Gowin BSRAM
+// block, so yosys put every one of them in LUT RAM - across the 9
+// instances in dot_product_engine.v that needed ~1,150 RAM16SDP4 cells
+// against the GW2AR-18's 648, the actual reason Tools > AI Accelerator
+// failed place & route. One memory maps onto a single BSRAM block per
+// instance instead (SPX9, byte-enabled, so LANES*8 must be <= 32).
+// Single-port rather than dual-port because this yosys (0.33) emits the
+// legacy SDP/SDPX9 primitives for simple-dual-port RAM, which
+// nextpnr-himbaechel can't place (it only knows SDPB/SDPX9B) - and
+// loading and computing never overlap, so one port is enough. Behavior is unchanged:
+// byte-serial writes, a LANES-wide registered read with 1 cycle latency.
 //
 `timescale 1ns / 1ps
 //
@@ -41,19 +54,23 @@ module byte_interleave_ram #(
   wire [LOG2LANES-1:0] wr_lane = wr_byte_addr[LOG2LANES-1:0];
   wire [WORD_AW-1:0]   wr_word = wr_byte_addr[WORD_AW+LOG2LANES-1:LOG2LANES];
 
-  genvar gi;
-  generate
-    for (gi = 0; gi < LANES; gi = gi + 1) begin : g_lane_mem
-      reg [7:0] mem [0:WORDS-1];
-      reg [7:0] rdata_r;
+  // One LANES*8-bit wide memory with per-byte writes and a single
+  // address shared by both directions (write address while wr_en, read
+  // address otherwise) - a single-port RAM, see this file's header for
+  // why. While a write is in progress rd_data is meaningless; the engine
+  // only reads during compute, when nothing is being loaded.
+  (* ram_style = "block" *)
+  reg [LANES*8-1:0] mem [0:WORDS-1];
+  reg [LANES*8-1:0] rdata_r;
+  wire [WORD_AW-1:0] addr = wr_en ? wr_word : rd_word_addr;
 
-      always @(posedge clk) begin
-        if (wr_en && (wr_lane == gi[LOG2LANES-1:0])) mem[wr_word] <= wr_data;
-        rdata_r <= mem[rd_word_addr];
-      end
+  integer gi;
+  always @(posedge clk) begin
+    for (gi = 0; gi < LANES; gi = gi + 1)
+      if (wr_en && (wr_lane == gi)) mem[addr][gi*8 +: 8] <= wr_data;
+    rdata_r <= mem[addr];
+  end
 
-      assign rd_data[gi*8 +: 8] = rdata_r;
-    end
-  endgenerate
+  assign rd_data = rdata_r;
 
 endmodule

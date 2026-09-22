@@ -1,53 +1,51 @@
 #include "Arduino.h"
 
 /* analogWrite() is real hardware PWM (gateware/src/pwm_bank.v) with a
- * per-pin frequency (analogWriteFrequency()):
- *
- * - LED pins 0-5 each have a dedicated channel (0-5). Writing switches
- *   that LED from tang_leds' plain digital register to its PWM channel;
- *   pinMode()/digitalWrite() switch it back (see wiring_digital.cpp).
- * - GPIO0-GPIO20 share a pool of TANGNANO20K_PWM_GPIO_CHANNELS channels
- *   (6-9), assigned on the first analogWrite() to a pin and released by
- *   pinMode()/digitalWrite() on it. While assigned, the channel overrides
- *   that pin as a PWM-driven output. With the pool exhausted, analogWrite()
- *   falls back to what AVR Arduinos do on non-PWM pins: HIGH for values
- *   >= 128, LOW below.
+ * per-pin frequency (analogWriteFrequency()). The 6 onboard LEDs (pins
+ * 0-5) and GPIO0-GPIO20 are treated alike: they share a pool of
+ * TANGNANO20K_PWM_CHANNELS channels, one assigned on the first
+ * analogWrite() to a pin and released by pinMode()/digitalWrite() on it
+ * (see wiring_digital.cpp), matching real-Arduino behavior where those
+ * calls stop the PWM. While assigned, the channel overrides the pin: an
+ * LED shows PWM instead of its plain on/off register, a GPIO pin becomes
+ * a PWM-driven output. With the pool exhausted, analogWrite() falls back
+ * to what AVR Arduinos do on non-PWM pins: HIGH for values >= 128, LOW
+ * below.
  *
  * Values are Arduino's usual 0-255, scaled onto the channel's period, so
  * 0 is always low and 255 always high at any frequency. */
 
-#define LED_PINS  TANGNANO20K_PWM_LED_CHANNELS
-#define PWM_PINS  (LED_PINS + TANGNANO20K_GPIO_COUNT)
+#define PWM_PINS   (TANGNANO20K_NUM_LEDS + TANGNANO20K_GPIO_COUNT)
 #define NO_CHANNEL 0xFF
 
-/* Per-pin state, indexed by pwmIndex(): LEDs 0-5, then GPIO0-GPIO20. */
-static uint32_t pinFrequency[PWM_PINS];  // 0 = default (F_CPU/256)
-static uint8_t pinValue[PWM_PINS];       // last analogWrite() value
-static uint8_t pinChannel[PWM_PINS] = {
-  0, 1, 2, 3, 4, 5, // LEDs: fixed channels
-  NO_CHANNEL, NO_CHANNEL, NO_CHANNEL, NO_CHANNEL, NO_CHANNEL, NO_CHANNEL, NO_CHANNEL,
-  NO_CHANNEL, NO_CHANNEL, NO_CHANNEL, NO_CHANNEL, NO_CHANNEL, NO_CHANNEL, NO_CHANNEL,
-  NO_CHANNEL, NO_CHANNEL, NO_CHANNEL, NO_CHANNEL, NO_CHANNEL, NO_CHANNEL, NO_CHANNEL,
-};
-static bool ledPwmActive[LED_PINS];
-static bool poolChannelUsed[TANGNANO20K_PWM_GPIO_CHANNELS];
+/* Per-pin state, indexed by pwmIndex(): LEDs 0-5, then GPIO0-GPIO20 -
+ * the same numbering as pwm_bank.v's CFG target field. */
+static uint32_t pinFrequency[PWM_PINS]; // 0 = default (F_CPU/256)
+static uint8_t pinValue[PWM_PINS];      // last analogWrite() value
+static uint8_t pinChannel[PWM_PINS];    // channel+1, 0 = not in PWM mode
+static bool channelUsed[TANGNANO20K_PWM_CHANNELS];
 
 /* Maps an Arduino pin number to an index into the tables above, or -1 if
  * the pin has no PWM support. */
 static int pwmIndex(pin_size_t pin)
 {
-  if (pin < LED_PINS)
+  if (pin < TANGNANO20K_NUM_LEDS)
     return pin;
   if (pin >= TANGNANO20K_PIN_GPIO_BASE && pin < TANGNANO20K_PIN_GPIO_BASE + TANGNANO20K_GPIO_COUNT)
-    return LED_PINS + (pin - TANGNANO20K_PIN_GPIO_BASE);
+    return TANGNANO20K_NUM_LEDS + (pin - TANGNANO20K_PIN_GPIO_BASE);
   return -1;
 }
 
-static bool isActive(int idx)
+/* pinChannel[] starts zero-filled (.bss), so "no channel" is stored as
+ * channel+1 internally - these two keep that detail in one place. */
+static uint8_t channelOf(int idx)
 {
-  if (idx < LED_PINS)
-    return ledPwmActive[idx];
-  return pinChannel[idx] != NO_CHANNEL;
+  return pinChannel[idx] ? (uint8_t)(pinChannel[idx] - 1) : NO_CHANNEL;
+}
+
+static void setChannel(int idx, uint8_t ch)
+{
+  pinChannel[idx] = (ch == NO_CHANNEL) ? 0 : (uint8_t)(ch + 1);
 }
 
 /* Programs channel `ch` for pin index `idx` from its stored frequency and
@@ -68,11 +66,24 @@ static void programChannel(uint8_t ch, int idx)
     period = 65536;
   period -= 1;
 
-  uint32_t gpio = (idx >= LED_PINS) ? (uint32_t)(idx - LED_PINS) : 0;
   uint32_t duty = ((uint32_t)pinValue[idx] * (period + 1) + 127) / 255;
 
-  TANGNANO20K_PWM_CFG_REG(ch) = TANGNANO20K_PWM_CFG(period, prescale, gpio);
+  TANGNANO20K_PWM_CFG_REG(ch) = TANGNANO20K_PWM_CFG(period, prescale, idx);
   TANGNANO20K_PWM_DUTY_REG(ch) = TANGNANO20K_PWM_ENABLE | duty;
+}
+
+/* Pool-exhausted fallback: plain on/off through the pin's digital
+ * register (which the PWM override would otherwise mask). */
+static void writeDigitalFallback(int idx, bool high)
+{
+  if (idx < TANGNANO20K_NUM_LEDS) {
+    uint32_t mask = 1UL << idx;
+    TANGNANO20K_LED_REG = high ? (TANGNANO20K_LED_REG | mask) : (TANGNANO20K_LED_REG & ~mask);
+    return;
+  }
+  uint32_t mask = 1UL << (idx - TANGNANO20K_NUM_LEDS);
+  TANGNANO20K_GPIO_DIR_REG = TANGNANO20K_GPIO_DIR_REG | mask;
+  TANGNANO20K_GPIO_OUT_REG = high ? (TANGNANO20K_GPIO_OUT_REG | mask) : (TANGNANO20K_GPIO_OUT_REG & ~mask);
 }
 
 void analogWrite(pin_size_t pinNumber, int value)
@@ -87,29 +98,23 @@ void analogWrite(pin_size_t pinNumber, int value)
     value = 255;
   pinValue[idx] = (uint8_t)value;
 
-  if (idx < LED_PINS) {
-    ledPwmActive[idx] = true;
-  } else if (pinChannel[idx] == NO_CHANNEL) {
-    for (uint8_t i = 0; i < TANGNANO20K_PWM_GPIO_CHANNELS; i++) {
-      if (!poolChannelUsed[i]) {
-        poolChannelUsed[i] = true;
-        pinChannel[idx] = LED_PINS + i;
+  uint8_t ch = channelOf(idx);
+  if (ch == NO_CHANNEL) {
+    for (uint8_t i = 0; i < TANGNANO20K_PWM_CHANNELS; i++) {
+      if (!channelUsed[i]) {
+        channelUsed[i] = true;
+        ch = i;
+        setChannel(idx, ch);
         break;
       }
     }
-    if (pinChannel[idx] == NO_CHANNEL) {
-      // Pool exhausted - plain digital fallback.
-      uint32_t mask = 1UL << (idx - LED_PINS);
-      TANGNANO20K_GPIO_DIR_REG = TANGNANO20K_GPIO_DIR_REG | mask;
-      if (value >= 128)
-        TANGNANO20K_GPIO_OUT_REG = TANGNANO20K_GPIO_OUT_REG | mask;
-      else
-        TANGNANO20K_GPIO_OUT_REG = TANGNANO20K_GPIO_OUT_REG & ~mask;
+    if (ch == NO_CHANNEL) {
+      writeDigitalFallback(idx, value >= 128);
       return;
     }
   }
 
-  programChannel(pinChannel[idx], idx);
+  programChannel(ch, idx);
 }
 
 void analogWriteFrequency(pin_size_t pin, uint32_t frequency)
@@ -118,24 +123,23 @@ void analogWriteFrequency(pin_size_t pin, uint32_t frequency)
   if (idx < 0)
     return;
   pinFrequency[idx] = frequency;
-  if (isActive(idx))
-    programChannel(pinChannel[idx], idx);
+  uint8_t ch = channelOf(idx);
+  if (ch != NO_CHANNEL)
+    programChannel(ch, idx);
 }
 
 void tangnano20k_pwm_release(pin_size_t pin)
 {
   int idx = pwmIndex(pin);
-  if (idx < 0 || !isActive(idx))
+  if (idx < 0)
+    return;
+  uint8_t ch = channelOf(idx);
+  if (ch == NO_CHANNEL)
     return;
 
-  uint8_t ch = pinChannel[idx];
   TANGNANO20K_PWM_DUTY_REG(ch) = 0;
-  if (idx < LED_PINS) {
-    ledPwmActive[idx] = false;
-  } else {
-    poolChannelUsed[ch - LED_PINS] = false;
-    pinChannel[idx] = NO_CHANNEL;
-  }
+  channelUsed[ch] = false;
+  setChannel(idx, NO_CHANNEL);
 }
 
 /* The Tang Nano 20K has no ADC wired to any pin - there is no way to

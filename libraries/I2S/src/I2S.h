@@ -39,7 +39,7 @@ enum I2SBitsPerSample
 
 /* begin()'s settings - see I2SClass::defaultConfig() and begin().
  *
- * `sampleRate` sets the shared BCLK divisor: bclk runs at sampleRate * 32
+ * `sampleRate` sets the shared BCLK: bclk runs at sampleRate * 32
  * (16 bits x 2 channels, regardless of `channels`/`bits` below - both
  * only affect write()/read()'s byte framing/conversion, not the hardware
  * timing). `mode` selects whether begin() enables the amplifier (PA_EN) -
@@ -55,7 +55,7 @@ enum I2SBitsPerSample
  * heap is the embedded 8MB SDRAM - see docs/PERIPHERALS.md#heap--malloc). */
 struct I2SConfig
 {
-  unsigned long sampleRate = 16000;
+  unsigned long sampleRate = 44100;
   I2SMode mode = I2S_MODE_OUTPUT;
   uint8_t channels = 2;
   I2SBitsPerSample bits = I2S_BITS_16;

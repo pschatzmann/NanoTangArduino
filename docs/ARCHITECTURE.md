@@ -106,7 +106,7 @@ Also set when the corresponding `Tools >` menu option is enabled (see
 | `0x8000_0008`                | UART clock divisor register                        |
 | `0x8000_000C`                | UART data register                                 |
 | `0x8000_0020`                | `systick` free-running 32-bit up-counter           |
-| `0x8000_0040`                | I2S BCLK divisor register (write)                  |
+| `0x8000_0040`                | I2S BCLK phase increment register (write)          |
 | `0x8000_0044`                | I2S transmit data register: `{left16,right16}` (write) |
 | `0x8000_0048`                | I2S control register: bit0 = PA_EN (write)         |
 | `0x8000_004C`                | I2S receive data register: `{left16,right16}` (read, blocks - Tools > I2S Input only) |
@@ -130,7 +130,7 @@ Also set when the corresponding `Tools >` menu option is enabled (see
 | `0x8000_0140`-`0x8000_015C`  | AI accelerator registers (see [Peripherals](PERIPHERALS.md#ai-accelerator)) |
 | `0x8000_0160`                | I2S IRQ_ENABLE: bit0=TX room, bit1=RX data (read/write, see [Peripherals](PERIPHERALS.md#audio-i2s)) |
 | `0x8000_0164`                | I2S STATUS: bits[4:0]=TX FIFO free slots, bits[9:5]=RX FIFO count (read-only) |
-| `0x8000_0180`-`0x8000_01CC`  | PWM DUTY/CFG register pairs, channels 0-5 = LEDs, 6-9 = GPIO pool (see `pwm_bank.v`) |
+| `0x8000_0180`-`0x8000_01AC`  | PWM DUTY/CFG register pairs, 6 channels, each routable to any LED or GPIO pin (see `pwm_bank.v`) |
 | `0x8000_0170`-`0x8000_017C`  | PWM audio PERIOD/SAMPLE_DIV/DATA/CTRL (Tools > PWM Audio only - see [Peripherals](PERIPHERALS.md#audio-pwm)) |
 | `0x1000_0000`-`0x107f_ffff`  | Embedded SDRAM, 8MB (heap - see [Peripherals](PERIPHERALS.md#heap--malloc)) |
 | `0x2000_0000`-`0x207f_ffff`  | Onboard SPI flash, memory-mapped read-only (boot/constant data - see [Peripherals](PERIPHERALS.md#flash)) |

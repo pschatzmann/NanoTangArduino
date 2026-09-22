@@ -2361,6 +2361,30 @@ module picorv32_pcpi_fast_mul #(
 		end
 	end
 
+	// arduino-tangnano20k: under synthesis the 33x33 signed multiply uses
+	// a Gowin MULT36X36 DSP block instead of `*` - yosys 0.33 has no DSP
+	// inference for Gowin and builds this multiply from ~8,000 LUT4s,
+	// which alone pushed Tools > Hardware Multiply/Divide combined with
+	// other options past the GW2AR-18's capacity. Same result, still
+	// registered into `rd` exactly as upstream. Simulation keeps `*`.
+	wire [32:0] mul_a = EXTRA_MUL_FFS ? rs1_q : rs1;
+	wire [32:0] mul_b = EXTRA_MUL_FFS ? rs2_q : rs2;
+`ifdef SYNTHESIS
+	wire [71:0] mul_dout;
+	MULT36X36 #(
+		.AREG(1'b0), .BREG(1'b0), .OUT0_REG(1'b0), .OUT1_REG(1'b0),
+		.PIPE_REG(1'b0), .ASIGN_REG(1'b0), .BSIGN_REG(1'b0)
+	) mul_dsp (
+		.A({{3{mul_a[32]}}, mul_a}), .B({{3{mul_b[32]}}, mul_b}),
+		.ASIGN(1'b1), .BSIGN(1'b1),
+		.CE(1'b1), .CLK(clk), .RESET(1'b0),
+		.DOUT(mul_dout)
+	);
+	wire [63:0] mul_result = mul_dout[63:0];
+`else
+	wire [63:0] mul_result = $signed(mul_a) * $signed(mul_b);
+`endif
+
 	always @(posedge clk) begin
 		pcpi_insn_valid_q <= pcpi_insn_valid;
 		if (!MUL_CLKGATE || active[0]) begin
@@ -2368,7 +2392,7 @@ module picorv32_pcpi_fast_mul #(
 			rs2_q <= rs2;
 		end
 		if (!MUL_CLKGATE || active[1]) begin
-			rd <= $signed(EXTRA_MUL_FFS ? rs1_q : rs1) * $signed(EXTRA_MUL_FFS ? rs2_q : rs2);
+			rd <= mul_result;
 		end
 		if (!MUL_CLKGATE || active[2]) begin
 			rd_q <= rd;

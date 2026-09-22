@@ -1,34 +1,40 @@
 /* New for the Arduino core: PWM for analogWrite()/analogWriteFrequency().
  *
- * LED_CHANNELS channels are hard-wired to the onboard LEDs (channel n =
- * LED n); GPIO_CHANNELS more form a small pool that software assigns on
- * demand to any expansion-header GPIO pin (see gpio_bank.v's override
- * inputs and cores/tangnano20k/wiring_analog.cpp). Every channel has its
- * own counter, period and prescaler, so each pin's frequency is
- * independent: frequency = CLK_FREQ / ((prescale+1) * (period+1)).
+ * A pool of CHANNELS PWM channels, each routable to any one PWM-capable
+ * pin: target 0..LED_WIDTH-1 is an onboard LED, target LED_WIDTH.. is
+ * expansion-header GPIO (target - LED_WIDTH). Software assigns a free
+ * channel on the first analogWrite() to a pin and releases it on
+ * pinMode()/digitalWrite() (see cores/tangnano20k/wiring_analog.cpp), so
+ * LEDs and GPIO pins are treated alike and at most CHANNELS pins are in
+ * PWM mode at once. Every channel has its own counter, period and
+ * prescaler, so each pin's frequency is independent: frequency =
+ * CLK_FREQ / ((prescale+1) * (period+1)).
+ *
+ * While an enabled channel targets a pin, it overrides that pin: an LED
+ * shows the PWM output instead of tang_leds.v's plain digital value (see
+ * top.v's per-bit mux), a GPIO pin becomes an output driven by PWM (see
+ * gpio_bank.v's override inputs). Disabling the channel hands the pin
+ * back to its plain digital register, untouched.
  *
  * Register interface: two 32-bit registers per channel at
- * base + 8*channel (channel 0..LED_CHANNELS+GPIO_CHANNELS-1):
+ * base + 8*channel (channel 0..CHANNELS-1):
  *   DUTY (offset 0x0, write) - bits[16:0]: compare value; the output is
  *        high while the counter is below it, so 0 = always low and
- *        period+1 = always high. bit31: enable (for LED channels, PWM
- *        drives the LED; when disabled, tang_leds.v's plain digital value
- *        is used instead - see top.v's per-bit mux. For GPIO channels,
- *        the assigned pin is overridden to an output driven by PWM). A
- *        new compare value takes effect at the next period boundary, so a
- *        change never produces a truncated pulse.
+ *        period+1 = always high. bit31: enable. A new compare value takes
+ *        effect at the next period boundary, so a change never produces a
+ *        truncated pulse.
  *   CFG  (offset 0x4, write) - bits[15:0]: period (counter runs
  *        0..period); bits[23:16]: prescale (counter advances every
- *        prescale+1 clocks); bits[28:24]: GPIO pin number (GPIO channels
- *        only, ignored for LED channels). Reset value: period 255,
- *        prescale 0 - the fixed CLK_FREQ/256 carrier this peripheral's
- *        8-bit predecessor (pwm6.v) always ran at.
+ *        prescale+1 clocks); bits[28:24]: target pin (see above). Reset
+ *        value: period 255, prescale 0 - the fixed CLK_FREQ/256 carrier
+ *        this peripheral's 8-bit, LED-only predecessor (pwm6.v) always
+ *        ran at.
  */
 
 module pwm_bank
   #(
-    parameter LED_CHANNELS = 6,
-    parameter GPIO_CHANNELS = 4,
+    parameter CHANNELS = 6,
+    parameter LED_WIDTH = 6,
     parameter GPIO_WIDTH = 21
     )
   (
@@ -41,14 +47,14 @@ module pwm_bank
    input wire [31:0]             wdata,
    output wire                   pwm_ready,
 
-   output wire [LED_CHANNELS-1:0] led_out,
-   output wire [LED_CHANNELS-1:0] led_enabled,
+   output wire [LED_WIDTH-1:0]   led_override,
+   output wire [LED_WIDTH-1:0]   led_value,
 
    output wire [GPIO_WIDTH-1:0]  gpio_override,
    output wire [GPIO_WIDTH-1:0]  gpio_value
    );
 
-   localparam CHANNELS = LED_CHANNELS + GPIO_CHANNELS;
+   localparam TARGETS = LED_WIDTH + GPIO_WIDTH;
 
    wire               we = |wstrb;
    wire [3:0]         channel = addr[6:3];
@@ -112,23 +118,28 @@ module pwm_bank
      end
    endgenerate
 
-   assign led_out = ch_out[LED_CHANNELS-1:0];
-   assign led_enabled = ch_enabled[LED_CHANNELS-1:0];
+   /* Routing: each enabled channel claims the target its CFG names.
+    * Software never assigns two channels to one target; if it did, their
+    * outputs would simply be OR-ed. */
+   wire [TARGETS-1:0] override;
+   wire [TARGETS-1:0] value;
 
-   /* GPIO pool routing: each enabled pool channel claims the pin its CFG
-    * names. Software never assigns two channels to one pin; if it did,
-    * their outputs would simply be OR-ed. */
-   genvar p;
+   genvar t;
    generate
-     for (p = 0; p < GPIO_WIDTH; p = p + 1) begin : route
-       wire [GPIO_CHANNELS-1:0] hit;
+     for (t = 0; t < TARGETS; t = t + 1) begin : route
+       wire [CHANNELS-1:0] hit;
        genvar g;
-       for (g = 0; g < GPIO_CHANNELS; g = g + 1) begin : pool
-         assign hit[g] = ch_enabled[LED_CHANNELS + g] && (ch_pin[5*(LED_CHANNELS + g) +: 5] == p);
+       for (g = 0; g < CHANNELS; g = g + 1) begin : pool
+         assign hit[g] = ch_enabled[g] && (ch_pin[5*g +: 5] == t);
        end
-       assign gpio_override[p] = |hit;
-       assign gpio_value[p] = |(hit & ch_out[CHANNELS-1:LED_CHANNELS]);
+       assign override[t] = |hit;
+       assign value[t] = |(hit & ch_out);
      end
    endgenerate
+
+   assign led_override  = override[LED_WIDTH-1:0];
+   assign led_value     = value[LED_WIDTH-1:0];
+   assign gpio_override = override[TARGETS-1:LED_WIDTH];
+   assign gpio_value    = value[TARGETS-1:LED_WIDTH];
 
 endmodule // pwm_bank

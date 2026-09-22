@@ -86,12 +86,15 @@ void I2SClass::begin()
   rxRingCount_ = 0;
   interrupts();
 
-  unsigned long bclk = config_.sampleRate * 32UL;
-  unsigned long divisor = TANGNANO20K_CLK_FREQ / (2UL * bclk);
-  if (divisor > 0)
-    divisor -= 1;
+  /* bclk = sampleRate * 32, toggling twice per period: phase increment
+   * = 2 * bclk * 2^32 / CLK_FREQ (see gateware/src/i2s.v's div_sel). The
+   * accumulator makes this exact on average for any rate, including
+   * 44100 Hz, which no integer divider of 27MHz can produce. */
+  uint64_t increment = ((uint64_t)config_.sampleRate * 64ULL << 32) / TANGNANO20K_CLK_FREQ;
+  if (increment > 0xFFFFFFFFULL)
+    increment = 0xFFFFFFFFULL; // bclk can't toggle faster than every clock
 
-  TANGNANO20K_I2S_DIV_REG = divisor;
+  TANGNANO20K_I2S_DIV_REG = (uint32_t)increment;
   /* PA_EN only matters for output/duplex - leaving the amplifier off in
    * pure INPUT mode saves power and avoids driving it with whatever
    * stale sample is sitting in the transmit shifter. */

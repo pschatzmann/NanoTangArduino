@@ -3,8 +3,7 @@
  * test for gateware/src/ai_accel_bus.v (dot_product_engine.v, integrated
  * from the standalone NanoTangAI project). See docs/PERIPHERALS.md "AI accelerator".
  *
- * Shape: 1 row, k=2 taps, cinPadded=16 (the minimum - one LANES-wide
- * chunk per tap).
+ * Shape: 1 row, k=2 taps, cinPadded=16.
  */
 
 #include <AIAccelerator.h>
@@ -34,7 +33,7 @@ void loop() {
   int32_t *results = accel.compute(activation, sizeof(activation));
 
   // Expect cinPadded * 1 * 2 = 32 for each tap (all-ones weights times
-  // all-twos activation, summed over 16 lanes).
+  // all-twos activation, summed over 16 inputs).
   for (uint8_t tap = 0; tap < kTaps; tap++) {
     Serial.print("tap ");
     Serial.print(tap);

@@ -42,11 +42,18 @@ module ai_accel_bus
    );
 
    localparam ROWS      = 8;
-   localparam LANES     = 16;
-   localparam LOG2LANES = 4;
+   // LANES/WORDS differ from the vendored engine's defaults (16/64): each
+   // byte_interleave_ram instance must fit one 32-bit-wide Gowin BSRAM
+   // block (see that file's header), so 4 lanes x 256 words - the same
+   // 1024 bytes per row/window, so BYTE_AW and every register below are
+   // unchanged. cin_padded only needs to be a multiple of 4 now (any
+   // multiple of 16 still is), and MAC throughput per cycle is 4x lower,
+   // negligible next to loading weights one bus write per byte.
+   localparam LANES     = 4;
+   localparam LOG2LANES = 2;
    localparam MAX_K     = 16;
-   localparam WORDS     = 64;
-   localparam WORD_AW   = 6;
+   localparam WORDS     = 256;
+   localparam WORD_AW   = 8;
    localparam BYTE_AW   = WORD_AW + LOG2LANES; // 10
 
    wire we = |wstrb;

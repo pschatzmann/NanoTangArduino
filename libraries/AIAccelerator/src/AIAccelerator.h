@@ -41,9 +41,10 @@ public:
   /// configuration).
   AIAccelerator();
 
-  /// `rows` must be <= 8 and `cinPadded` must be a multiple of 16 (the
-  /// gateware's fixed ROWS/LANES parameters - see
-  /// gateware/src/ai_accel_bus.v). Only stores the shape - call begin()
+  /// `rows` must be <= 8, `k` <= 16, `cinPadded` a multiple of 4 (the
+  /// gateware's fixed ROWS/MAX_K/LANES parameters - see
+  /// gateware/src/ai_accel_bus.v; any multiple of 16, NanoTangAI's
+  /// original requirement, still works), and `k * cinPadded` <= 1024. Only stores the shape - call begin()
   /// before loadWeights()/compute() to actually allocate this instance's
   /// weight/results buffers.
   AIAccelerator(uint16_t cinPadded, uint8_t k, uint8_t rows);

@@ -2,7 +2,7 @@
 
 #include <I2S.h>
 
-const unsigned long sampleRate = 16000;
+const unsigned long sampleRate = 44100;
 const unsigned long toneHz = 440;
 const int16_t amplitude = 8000;
 

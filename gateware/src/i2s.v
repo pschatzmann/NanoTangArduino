@@ -18,10 +18,16 @@
  *
  * Register interface (see uart_wrap.v for the analogous UART pattern).
  * Original window (offsets relative to the peripheral's base address):
- *   div_sel    (offset 0x0, write) - BCLK divisor. bclk toggles every
- *              (div+1) system clock cycles, so bclk frequency is
- *              CLK_FREQ / (2*(div+1)). Choose div so that
- *              bclk = sample_rate * 32 (16 bits/channel x 2 channels).
+ *   div_sel    (offset 0x0, write) - BCLK phase increment. A 32-bit
+ *              phase accumulator adds this every system clock and bclk
+ *              toggles on each overflow, so bclk frequency is
+ *              CLK_FREQ * inc / 2^33. Choose inc = sample_rate * 64 *
+ *              2^32 / CLK_FREQ (bclk = sample_rate * 32: 16 bits/channel
+ *              x 2 channels). Unlike an integer divider, this hits any
+ *              sample rate on average (44100 Hz at 27MHz with an integer
+ *              divider could only be 46875 or 42188 Hz); individual bclk
+ *              edges jitter by at most one system clock. 0 (the reset
+ *              value) stops bclk.
  *   dat_sel    (offset 0x4, write) - transmit: {left[15:0], right[15:0]}.
  *              Pushes onto the FIFO_DEPTH-deep transmit FIFO; a write is
  *              only accepted (i2s_ready asserted) while that FIFO has
@@ -213,20 +219,21 @@ module i2s
        endcase
      end
 
-   /* BCLK generator: toggles every (divider+1) clk cycles. */
-   reg [31:0]         div_cnt = 32'd0;
+   /* BCLK generator: fractional-N phase accumulator (see div_sel in
+    * this file's header) - toggles on each overflow of phase + divider. */
+   reg [31:0]         phase = 32'd0;
    reg                bclk_reg = 1'b0;
-   wire               bclk_tick = (div_cnt == divider);
+   wire [32:0]        phase_next = {1'b0, phase} + {1'b0, divider};
+   wire               bclk_tick = phase_next[32];
 
    always @(posedge clk or negedge reset_n)
      if (!reset_n) begin
-       div_cnt <= 32'd0;
+       phase <= 32'd0;
        bclk_reg <= 1'b0;
-     end else if (bclk_tick) begin
-       div_cnt <= 32'd0;
-       bclk_reg <= ~bclk_reg;
      end else begin
-       div_cnt <= div_cnt + 32'd1;
+       phase <= phase_next[31:0];
+       if (bclk_tick)
+         bclk_reg <= ~bclk_reg;
      end
 
    assign i2s_bclk = bclk_reg;

@@ -14,13 +14,13 @@ return 0.
 
 ### PWM on GPIO pins and `analogWriteFrequency()`
 
-`analogWrite()` also works on `GPIO0`-`GPIO20`, through a pool of **4**
-PWM channels shared by all GPIO pins. The first `analogWrite()` to a pin
-takes a free channel, and `pinMode()`/`digitalWrite()` on that pin gives
-it back. With all 4 in use, `analogWrite()` on a fifth pin falls back to
-plain on/off (HIGH for values >= 128), as AVR Arduinos do on non-PWM
-pins. The 6 LEDs have their own channels and don't count against the
-pool.
+`analogWrite()` works the same way on the LEDs and on `GPIO0`-`GPIO20`:
+all 27 pins share a pool of **6** PWM channels. The first `analogWrite()`
+to a pin takes a free channel, and `pinMode()`/`digitalWrite()` on that
+pin gives it back. So up to 6 pins (LEDs and GPIO in any mix) can be in
+PWM mode at once. With all 6 in use, `analogWrite()` on a seventh pin
+falls back to plain on/off (HIGH for values >= 128), as AVR Arduinos do
+on non-PWM pins.
 
 `analogWriteFrequency(pin, hz)` sets the frequency per pin, independently
 for every channel. It takes effect immediately if the pin is already in
@@ -116,7 +116,7 @@ config.sampleRate = 44100;
 I2S.begin(config);
 ```
 
-`sampleRate` (default `16000`) configures the shared BCLK divisor for `sampleRate * 32` (the hardware always moves
+`sampleRate` (default `44100`) sets the shared BCLK to `sampleRate * 32` (a fractional-N clock, so any rate is exact on average - 44100 at 27MHz included) (the hardware always moves
 16-bit samples, regardless of `bits` below) - this same clock paces both
 transmit and receive, regardless of `mode`. `mode` is one of
 `I2S_MODE_OUTPUT` (default), `I2S_MODE_INPUT`, or `I2S_MODE_DUPLEX` - it
@@ -379,20 +379,28 @@ gateware cost whether or not a sketch uses it).
 This is the compute engine from the standalone
 [NanoTangAI](https://github.com/pschatzmann/NanoTangAI) project (same
 author, Apache-2.0) - a row-parallel, lane-parallel INT8 dot-product
-engine sized for TinyTTS's decoder (8 weight-tile rows, 16-wide SIMD
-lanes, up to 16 taps) - but integrated directly onto this core's own
+engine sized for TinyTTS's decoder (8 weight-tile rows, up to 16 taps,
+1KB per row) - but integrated directly onto this core's own
 picorv32 bus (`gateware/src/ai_accel_bus.v`) instead of going through
 NanoTangAI's original external SPI link to a *second* Tang Nano 20K board.
 `gateware/src/dot_product_engine.v`, `dot_product_lane_array.v`,
 `int8_mac_lane.v`, and `byte_interleave_ram.v` are vendored from that
-project, with one deliberate deviation: `dot_product_engine.v`'s
-`result_mem` array carries an added `(* ram_style = "block" *)`
-attribute, the same BRAM-inference fix `gateware/src/sram8bit.v` needed
-for the same reason (see [Known limitations](KNOWN_LIMITATIONS.md)) -
-without it, this always-instantiated-when-enabled 128-entry array maps
-onto distributed LUT logic instead of a BRAM block, a real cost that
-caused a `nextpnr-himbaechel` placement failure ("no BELs remaining")
-when combined with other LUT-hungry Tools menu options.
+project, with deliberate deviations so it actually fits the GW2AR-18.
+As vendored, it needed about 6x the chip's LUTs and failed place & route
+("no BELs remaining") even on its own:
+
+- Its 9 activation/weight buffers (1KB each) are one 32-bit-wide block
+  RAM each, instead of 16 byte-wide lane memories each too small for
+  block RAM that all landed in LUT RAM.
+- That means 4 parallel lanes per row instead of 16 (`ai_accel_bus.v`'s
+  `LANES`/`WORDS`), so `cinPadded` only needs to be a multiple of 4.
+  The multiply-accumulate phase is 4x slower, which is negligible next
+  to loading weights one bus write per byte. Results are bit-identical.
+- The 32 multipliers use the FPGA's `MULT9X9` DSP blocks. This yosys
+  version doesn't infer Gowin DSPs and builds each 8x8 multiply from
+  ~250 LUTs.
+- The result memory is split per row, so each part has one write port
+  and maps onto LUT RAM instead of 4096 flip-flops.
 
 The API is a simplified, instance-based take on NanoTangAI's
 `TangNanoAccelerator`: `AIAccelerator accel(cinPadded, k, rows);` sets
@@ -599,6 +607,14 @@ constant-data partition instead of the 64KB internal SRAM:
 ```cpp
 const uint8_t bigTable[4096] FLASH_DATA = { ... };
 ```
+
+`PROGMEM`, the usual Arduino spelling, is an alias for `FLASH_DATA`, so
+existing AVR-style code works unchanged: `const uint8_t table[] PROGMEM
+= {...};` lands in flash too, and `pgm_read_byte()`/`memcpy_P()` etc.
+work as plain reads. `PSTR()`/`F()` strings are *not* moved; they stay
+in SRAM. Libraries that use `PROGMEM` also put their tables in flash,
+which saves SRAM but makes each read a flash transaction (see below),
+so a table read in a tight loop gets noticeably slower.
 
 Reads happen through ordinary array/pointer syntax - no special API -
 blocking via the same bus backpressure every other peripheral in this
