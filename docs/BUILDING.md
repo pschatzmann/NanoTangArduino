@@ -30,7 +30,7 @@ under Arduino IDE's Preferences > "Additional Boards Manager URLs" (or
 `arduino-cli`'s `--additional-urls`):
 
 ```
-https://raw.githubusercontent.com/pschatzmann/arduino-nanotang/main/package_nanotang_index.json
+https://raw.githubusercontent.com/pschatzmann/arduino-tangnano20k/main/package_nanotang_index.json
 ```
 
 Then install `nanotang:tangnano20k` from Boards Manager (IDE) or:
@@ -52,7 +52,7 @@ repo into place, e.g.:
 
 ```sh
 mkdir -p ~/Arduino/hardware/nanotang
-ln -s /path/to/arduino-nanotang ~/Arduino/hardware/nanotang/tangnano20k
+ln -s /path/to/arduino-tangnano20k ~/Arduino/hardware/nanotang/tangnano20k
 ```
 
 Then the board is available as FQBN `nanotang:tangnano20k:tangnano20k`:
