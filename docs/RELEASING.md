@@ -108,10 +108,13 @@ full list.
    ```sh
    python3 -m json.tool package_nanotang_index.json
    ```
-5. Create a GitHub Release tagged `v<version>` on the repo and attach every
+5. Commit the regenerated `package_nanotang_index.json` (and `platform.txt`,
+   if the version was bumped) and push - *before* creating the release, so
+   the release's tag points at a commit whose version files already match
+   the version being released.
+6. Create a GitHub Release tagged `v<version>` on the repo and attach every
    archive under `dist/` (board package + however many toolchain archives
    are present).
-6. Commit the regenerated `package_nanotang_index.json` and push.
 7. Verify end-to-end before telling anyone the release is ready:
    ```sh
    arduino-cli core update-index --additional-urls \

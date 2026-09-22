@@ -12,10 +12,11 @@ Steps run, in order:
   3. tools/package/make_release.sh              (board + Linux toolchain
      archives, regenerates package_nanotang_index.json)
   4. python3 -m json.tool package_nanotang_index.json   (sanity check)
-  5. gh release create/upload                   (creates the v<version>
+  5. git commit (and, with --push, push) the regenerated
+     package_nanotang_index.json - *before* the release is created, so the
+     release's tag points at a commit with matching version files
+  6. gh release create/upload                   (creates the v<version>
      release if it doesn't exist yet, uploads every archive in dist/)
-  6. git commit (and, with --push, push) the regenerated
-     package_nanotang_index.json
   7. arduino-cli core update-index / core install / compile libraries/Core/examples/Blink
      against the live raw index URL (skipped with --skip-verify)
 
@@ -143,24 +144,10 @@ def main():
         print("== --dry-run: stopping before GitHub release / git commit / verify ==")
         return
 
-    # Step 5: create the release if it doesn't exist yet, then upload assets.
-    existing = subprocess.run(
-        ["gh", "release", "view", tag, "--repo", args.repo],
-        cwd=ROOT, capture_output=True, text=True,
-    )
-    if existing.returncode != 0:
-        create_cmd = ["gh", "release", "create", tag, "--repo", args.repo,
-                      "--title", tag, "--generate-notes"]
-        if args.draft:
-            create_cmd.append("--draft")
-        run(create_cmd)
-    else:
-        print(f"== Release {tag} already exists, uploading/updating assets ==")
-
-    run(["gh", "release", "upload", tag, *[str(dist / a) for a in archives],
-         "--repo", args.repo, "--clobber"])
-
-    # Step 6: commit (and optionally push) platform.txt + the regenerated index.
+    # Step 5: commit (and optionally push) platform.txt + the regenerated
+    # index *before* the GitHub release is created, so the release's tag
+    # points at a commit whose platform.txt/package_nanotang_index.json
+    # already match the version being released - not the previous one.
     commit_paths = [str(index_path)]
     if args.version:
         commit_paths.append(str(platform_txt))
@@ -179,6 +166,23 @@ def main():
             print("== Committed locally; pass --push to push to origin ==")
     else:
         print(f"== Nothing to commit ({', '.join(commit_paths)} already match HEAD) ==")
+
+    # Step 6: create the release if it doesn't exist yet, then upload assets.
+    existing = subprocess.run(
+        ["gh", "release", "view", tag, "--repo", args.repo],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    if existing.returncode != 0:
+        create_cmd = ["gh", "release", "create", tag, "--repo", args.repo,
+                      "--title", tag, "--generate-notes"]
+        if args.draft:
+            create_cmd.append("--draft")
+        run(create_cmd)
+    else:
+        print(f"== Release {tag} already exists, uploading/updating assets ==")
+
+    run(["gh", "release", "upload", tag, *[str(dist / a) for a in archives],
+         "--repo", args.repo, "--clobber"])
 
     # Step 7: end-to-end verification against the live raw index URL.
     if args.skip_verify:
