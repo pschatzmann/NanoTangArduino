@@ -9,6 +9,7 @@ menu.i2c_buses=I2C Buses
 menu.hw_muldiv=Hardware Multiply/Divide
 menu.i2s_rx=I2S Input
 menu.pwm_audio=PWM Audio
+menu.flash_cache=Flash Cache
 menu.f_cpu=Clock Speed
 
 ## Sipeed Tang Nano 20K (PicoRV32 soft-SoC)
@@ -164,6 +165,16 @@ tangnano20k.menu.pwm_audio.disabled=Disabled (Recommended)
 tangnano20k.menu.pwm_audio.disabled.build.pwm_audio=0
 tangnano20k.menu.pwm_audio.enabled=Enabled
 tangnano20k.menu.pwm_audio.enabled.build.pwm_audio=1
+
+# Tools > Flash Cache. Disabled by default: a 512-byte read cache in front
+# of the onboard flash (gateware/src/qspi_flash_cached.v) - repeated reads
+# of FLASH_DATA/PROGMEM tables drop from ~510 to ~2 clocks, sequential
+# reads to ~290, and Boot Mode: Flash boots faster. Costs ~1,700 LUT4s
+# (~8% of the FPGA) whether or not a sketch reads flash, hence opt-in.
+tangnano20k.menu.flash_cache.disabled=Disabled (Recommended)
+tangnano20k.menu.flash_cache.disabled.build.flash_cache=0
+tangnano20k.menu.flash_cache.enabled=Enabled
+tangnano20k.menu.flash_cache.enabled.build.flash_cache=1
 
 # Tools > Clock Speed. Unlike every other menu on this board, this isn't a
 # software flag - it reconfigures the PLL that clocks the entire SoC

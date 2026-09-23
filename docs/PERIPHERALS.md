@@ -613,12 +613,26 @@ existing AVR-style code works unchanged: `const uint8_t table[] PROGMEM
 = {...};` lands in flash too, and `pgm_read_byte()`/`memcpy_P()` etc.
 work as plain reads. `PSTR()`/`F()` strings are *not* moved; they stay
 in SRAM. Libraries that use `PROGMEM` also put their tables in flash,
-which saves SRAM but makes each read a flash transaction (see below),
-so a table read in a tight loop gets noticeably slower.
+which saves SRAM at the cost of slower reads (see below).
 
 Reads happen through ordinary array/pointer syntax - no special API -
 blocking via the same bus backpressure every other peripheral in this
-design uses. `tools/build_bitstream.py` extracts the `.flash_data`
+design uses. By default every 32-bit read is one SPI transaction, about
+510 system clocks. **Tools > Flash Cache: Enabled** adds a 512-byte read
+cache (16 lines of 32 bytes, a valid bit per word,
+`gateware/src/qspi_flash_cached.v`) at a cost of ~1,700 LUT4s (~8% of
+the FPGA):
+
+| Access | Without cache | With cache |
+|---|---|---|
+| Repeated (e.g. a small table read in a loop) | ~510 | ~2 |
+| Sequential (streams to the end of the 32-byte line) | ~510 | ~290 |
+| Scattered, not cached | ~510 | ~510 |
+
+With the cache, a lookup table up to about 512 bytes costs almost
+nothing after its first pass, and Boot Mode: Flash copies the program
+about 1.8x faster. Without it, copy hot data to SRAM or SDRAM first. `tools/build_bitstream.py`
+extracts the `.flash_data`
 section's raw bytes from the compiled ELF; `tools/upload.py` writes them
 to the flash's data partition as part of every upload, in either boot
 mode. See `libraries/Core/examples/FlashDataTest`.

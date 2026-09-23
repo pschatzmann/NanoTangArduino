@@ -78,6 +78,12 @@ build.i2s_rx=0
 # TANGNANO20K_PWM_AUDIO (see build.defines above).
 build.pwm_audio=0
 
+# Overridden by the Tools > Flash Cache board menu (see boards.txt): "0"
+# (default) keeps the plain flash reader; "1" synthesizes the 512-byte
+# read cache in front of it (gateware/src/qspi_flash_cached.v) - see
+# tools/build_bitstream.py and docs/PERIPHERALS.md "Flash".
+build.flash_cache=0
+
 # Overridden by the Tools > Clock Speed board menu (see boards.txt), which
 # also overrides build.f_cpu in lockstep - all four move together, same
 # pattern as Hardware Multiply/Divide's build.march/build.libgcc_path,
@@ -167,7 +173,7 @@ recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.f
 # build (bake the program into SRAM init files, then yosys -> nextpnr ->
 # gowin_pack). Expect this to take noticeably longer than a normal
 # Arduino "compile" step - see docs/BUILDING.md.
-recipe.objcopy.hex.pattern=python3 "{runtime.platform.path}/tools/build_bitstream.py" "{build.path}/{build.project_name}.elf" "{compiler.path}{compiler.objcopy.cmd}" "{build.path}/fpga" "{build.ai_accel}" "{build.boot_flash}" "{build.spi_count}" "{build.i2c_count}" "{build.hw_muldiv}" "{build.i2s_rx}" "{build.clk_freq_hz}" "{build.pll_idiv}" "{build.pll_fbdiv}" "{build.pll_odiv}" "{build.pwm_audio}"
+recipe.objcopy.hex.pattern=python3 "{runtime.platform.path}/tools/build_bitstream.py" "{build.path}/{build.project_name}.elf" "{compiler.path}{compiler.objcopy.cmd}" "{build.path}/fpga" "{build.ai_accel}" "{build.boot_flash}" "{build.spi_count}" "{build.i2c_count}" "{build.hw_muldiv}" "{build.i2s_rx}" "{build.clk_freq_hz}" "{build.pll_idiv}" "{build.pll_fbdiv}" "{build.pll_odiv}" "{build.pwm_audio}" "{build.flash_cache}"
 
 recipe.size.pattern="{compiler.path}{compiler.size.cmd}" -A "{build.path}/{build.project_name}.elf"
 

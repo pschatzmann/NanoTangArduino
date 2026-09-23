@@ -200,6 +200,18 @@ general-purpose GPIO pool.
 | Disabled (default) | `:pwm_audio=disabled` |
 | Enabled | `:pwm_audio=enabled` |
 
+### Flash Cache
+
+See [Peripherals: Flash](PERIPHERALS.md#flash). **Disabled by default** -
+enabling it adds a 512-byte read cache in front of the onboard flash
+(faster `FLASH_DATA`/`PROGMEM` reads and flash boot) at a cost of ~1,700
+LUT4s.
+
+| Option | FQBN suffix |
+|---|---|
+| Disabled (default) | `:flash_cache=disabled` |
+| Enabled | `:flash_cache=enabled` |
+
 ## Verifying changes
 
 ```sh

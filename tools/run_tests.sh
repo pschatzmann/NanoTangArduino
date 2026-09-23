@@ -26,7 +26,7 @@ warn() { echo "  WARN: $1"; }
 fail() { echo "  FAIL: $1"; FAIL=1; }
 
 echo "== Gateware: yosys hierarchy check =="
-GW_SOURCES="picorv32.v sram8bit.v sram.v simpleuart.v uart_wrap.v reset.v systick.v tang_leds.v i2s.v pwm_bank.v pwm_audio.v spi_master.v od_gpio2.v gpio_bank.v ws2812b.v ws2812b_tgt.v extirq.v dma_engine.v qspi_flash.v int8_mac_lane.v dot_product_lane_array.v byte_interleave_ram.v dot_product_engine.v ai_accel_bus.v sdram.v sdram_bus.v gowin_rpll_sys.v top.v"
+GW_SOURCES="picorv32.v sram8bit.v sram.v simpleuart.v uart_wrap.v reset.v systick.v tang_leds.v i2s.v pwm_bank.v pwm_audio.v spi_master.v od_gpio2.v gpio_bank.v ws2812b.v ws2812b_tgt.v extirq.v dma_engine.v qspi_flash.v qspi_flash_cached.v int8_mac_lane.v dot_product_lane_array.v byte_interleave_ram.v dot_product_engine.v ai_accel_bus.v sdram.v sdram_bus.v gowin_rpll_sys.v top.v"
 
 # top.v instantiates the Gowin rPLL primitive (for the system clock/SDRAM
 # clock - see gateware/src/gowin_rpll_sys.v); yosys needs its Gowin cell

@@ -815,7 +815,13 @@ module top
       .irq_out(dma_irq_out)
       );
 
+   // Tools > Flash Cache selects the reader: both have identical ports
+   // and bus behavior, the cached one adds a 512-byte read cache.
+`ifdef WITH_FLASH_CACHE
+   qspi_flash_cached flash
+`else
    qspi_flash flash
+`endif
      (
       .clk(clk_sys),
       .reset_n(reset_n),
