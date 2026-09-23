@@ -14,6 +14,19 @@
   the *other* one to see `Serial.print()`/`println()` output. Which of
   the two is which isn't yet confirmed on real hardware - if the first
   one you try shows nothing, try the other.
+- **Data from the board to the PC gets lost while the PC is sending at the
+  same time.** This is the onboard BL616 USB bridge (debugger firmware
+  2025030317 on the tested board), not the FPGA: a test board streaming
+  2,000 bytes to the PC delivered all of them - unless the PC sent 1,000
+  bytes to the board during the transfer, in which case the board still
+  received every byte but only 1,156 of its 2,000 reached the PC, in
+  bursts matching the bridge's 64-byte USB packets. The loss doesn't
+  depend on the baud rate (9600 and 115200 behave alike). Normal use is
+  unaffected - printing while you occasionally type in the Serial Monitor,
+  or either direction on its own - but echoing a large paste back, or any
+  protocol that streams both ways at once, loses data. A newer BL616
+  firmware from Sipeed (see their "Update debugger" page) may fix it; that
+  hasn't been tried.
 - **`gateware/src/sram8bit.v`'s memory needs an explicit `(* ram_style =
   "block" *)` attribute** to map onto real Gowin BSRAM; without it, yosys
   defaults to a small LUT-based distributed-RAM primitive that doesn't

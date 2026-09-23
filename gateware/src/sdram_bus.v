@@ -91,10 +91,26 @@ module sdram_bus
    assign rdata = rdata_reg;
    assign dma_rdata = rdata_reg;
 
+   wire                ctl_busy;
    wire                ctl_rd = (state == ST_ISSUE) && !is_write;
    wire                ctl_wr = (state == ST_ISSUE) && is_write;
-   wire                ctl_refresh = (state == ST_IDLE) && refresh_due;
-   wire                ctl_busy;
+   /* sdram.v only takes a command while it's idle, and a one-cycle rd/wr
+    * pulse arriving while it's busy is silently dropped. So a refresh is
+    * issued only when it's idle, and a new request is accepted only when
+    * it's idle and no refresh is due - otherwise a request arriving in
+    * the same cycle as a refresh was lost, and this FSM, seeing busy
+    * drop once the refresh finished, reported stale read data or a write
+    * that never happened (found on real hardware: intermittently wrong
+    * SDRAM words). */
+   wire                ctl_refresh = (state == ST_IDLE) && refresh_due && !ctl_busy;
+   wire                can_accept = !refresh_due && !ctl_busy;
+
+   // Lowest byte lane a write mask selects: a write starts there, not at
+   // lane 0 (which wrote byte 0 on every byte/halfword write - found on
+   // real hardware).
+   function [1:0] first_lane(input [3:0] m);
+      first_lane = m[0] ? 2'd0 : m[1] ? 2'd1 : m[2] ? 2'd2 : 2'd3;
+   endfunction
    wire                ctl_data_ready;
    wire [7:0]          ctl_dout;
    wire [31:0]         ctl_dout32;
@@ -129,21 +145,21 @@ module sdram_bus
            // CPU port always wins ties, so a long DMA transfer never
            // starves ordinary CPU SDRAM access for more than the current
            // in-flight word (re-arbitrated every word, see module header).
-           if (sel && !ready) begin
+           if (sel && !ready && can_accept) begin
              op_addr <= addr;
              op_wstrb <= wstrb;
              op_wdata <= wdata;
              is_write <= |wstrb;
              serving_dma <= 1'b0;
-             lane <= 2'd0;
+             lane <= first_lane(wstrb);
              state <= ST_ISSUE;
-           end else if (dma_sel && !dma_ready) begin
+           end else if (dma_sel && !dma_ready && can_accept) begin
              op_addr <= dma_addr;
              op_wstrb <= dma_wstrb;
              op_wdata <= dma_wdata;
              is_write <= |dma_wstrb;
              serving_dma <= 1'b1;
-             lane <= 2'd0;
+             lane <= first_lane(dma_wstrb);
              state <= ST_ISSUE;
            end
          end
