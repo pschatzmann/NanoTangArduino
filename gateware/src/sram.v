@@ -80,10 +80,13 @@ sram8
     .data_out(sram_data_o[7:0])
     );
 
-   always @(posedge clk) 
-     if (sram_sel)
-        ready <= 1'b1;
-     else
-        ready <= 1'b0;
+   /* One ready pulse per access. picorv32 with COMPRESSED_ISA keeps
+    * mem_valid high and moves straight on to the next address for the
+    * second half of an unaligned 32-bit instruction; a ready that simply
+    * followed sram_sel stayed high into that access and handed the CPU the
+    * previous word (found on real hardware: the Compressed Instructions
+    * option never reached setup()). */
+   always @(posedge clk)
+     ready <= sram_sel && !ready;
    
 endmodule // sram
