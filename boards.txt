@@ -136,12 +136,14 @@ tangnano20k.menu.i2c_buses.two.build.i2c_count=2
 # operation too (libgcc's software floating-point routines are internally
 # built from integer multiplies and shifts - see
 # docs/KNOWN_LIMITATIONS.md "No FPU"). build.libgcc_path picks the
-# matching pre-built libgcc.a variant already present in the Zephyr SDK
-# (confirmed via `riscv64-zephyr-elf-gcc -print-libgcc-file-name`) - see
-# platform.txt.
+# matching pre-built libgcc.a variant already present in the Zephyr SDK -
+# see platform.txt. Not the SDK's top-level libgcc.a: that one is built
+# for rv32ima, and its routines (64-bit division, all software floating
+# point) contain mul/div instructions a plain RV32I CPU traps on - found
+# on real hardware, where the first printf("%lu") hung the CPU.
 tangnano20k.menu.hw_muldiv.disabled=Disabled (Recommended)
 tangnano20k.menu.hw_muldiv.disabled.build.march_m=
-tangnano20k.menu.hw_muldiv.disabled.build.libgcc_path={compiler.path}../lib/gcc/riscv64-zephyr-elf/12.2.0/libgcc.a
+tangnano20k.menu.hw_muldiv.disabled.build.libgcc_path={compiler.path}../lib/gcc/riscv64-zephyr-elf/12.2.0/rv32i_zicsr_zifencei/ilp32/libgcc.a
 tangnano20k.menu.hw_muldiv.disabled.build.hw_muldiv=0
 tangnano20k.menu.hw_muldiv.enabled=Enabled
 tangnano20k.menu.hw_muldiv.enabled.build.march_m=m

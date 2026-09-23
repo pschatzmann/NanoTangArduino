@@ -115,7 +115,11 @@ can: "1" for Tools > CAN: Enabled - synthesizes gateware/src/can_ctrl.v
 (see libraries/CAN). Its TX/RX pins are chosen at run time, so no GPIO is
 claimed at build time.
 """
+import gzip
 import hashlib
+import json
+import os
+import random
 import shutil
 import subprocess
 import sys
@@ -168,27 +172,213 @@ def run(cmd, **kwargs):
     subprocess.run(cmd, check=True, **kwargs)
 
 
-def core_bitstream_cache_key(boot_image_path, ai_accel, spi_count, i2c_count, hw_muldiv, i2s_rx,
-                              clk_freq_hz, pll_idiv, pll_fbdiv, pll_odiv, pwm_audio, flash_cache,
-                              compressed, barrel_shifter, can):
-    """Hashes everything that can affect a Boot Mode: Flash core bitstream,
-    independent of sketch content: the fixed core image (irq_vec.S/boot.S,
-    the only trace of those build_bitstream.py otherwise never reads),
-    every gateware source file, the pin constraints, and the menu flags
-    that gate what gets synthesized."""
-    h = hashlib.sha256()
-    h.update(boot_image_path.read_bytes())
+# Block RAM primitives: each output clock-enable port and the read-side
+# clock-enable port that drives it (see fix_bram_oce()).
+BRAM_OCE_PORTS = {
+    "SP": [("OCE", "CE")], "SPX9": [("OCE", "CE")],
+    "SDPB": [("OCE", "CEB")], "SDPX9B": [("OCE", "CEB")],
+    "DPB": [("OCEA", "CEA"), ("OCEB", "CEB")], "DPX9B": [("OCEA", "CEA"), ("OCEB", "CEB")],
+    "pROM": [("OCE", "CE")], "pROMX9": [("OCE", "CE")],
+}
+
+
+def fix_bram_oce(json_path):
+    """Drives every block RAM's output clock enable (OCE) from its read
+    clock enable in yosys's netlist. yosys 0.33 (still what distribution
+    packages ship) maps inferred memories with OCE tied low - upstream
+    ties it high since January 2024 ("gowin: fix the BRAM mapping").
+    Gowin's documentation says OCE is ignored in the bypass read mode
+    these memories use, but on a real GW2AR-18 a block with OCE low never
+    updates its output: every read returns the same garbage, so the CPU
+    traps on its first instruction. Verified on hardware with the SP
+    primitive directly: OCE=0 fails half the bits, OCE=1 and OCE=CE read
+    back their init content. OCE=CE is used rather than a constant 1
+    because routing a constant to all 32 blocks made nextpnr 0.11 fail to
+    route the full design; the CE net already reaches each block. Returns
+    how many ports were changed."""
+    with open(json_path) as f:
+        netlist = json.load(f)
+    changed = 0
+    for module in netlist["modules"].values():
+        for cell in module.get("cells", {}).values():
+            conns = cell["connections"]
+            for oce, ce in BRAM_OCE_PORTS.get(cell["type"], []):
+                if oce in conns and ce in conns and conns[oce] != conns[ce]:
+                    conns[oce] = list(conns[ce])
+                    changed += 1
+    if changed:
+        with open(json_path, "w") as f:
+            json.dump(netlist, f)
+    return changed
+
+
+def build_version_stamp():
+    """Everything besides the design itself that a cached result depends
+    on: this package's version (platform.txt `version=`, so deploying a new
+    release always rebuilds), this script's own contents (fixes to the
+    flow, such as fix_bram_oce(), invalidate old results) and the versions
+    of yosys, nextpnr and apicula."""
+    lines = []
+    for line in (REPO_ROOT / "platform.txt").read_text().splitlines():
+        if line.startswith("version="):
+            lines.append("package " + line.split("=", 1)[1].strip())
+    lines.append("script " + hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
+    for cmd in (["yosys", "-V"], ["nextpnr-himbaechel", "--version"]):
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True)
+            lines.append((r.stdout + r.stderr).strip())
+        except OSError:
+            lines.append(cmd[0] + " not found")
+    # apicula's version, from the Python interpreter gowin_pack runs under.
+    gowin_pack = shutil.which("gowin_pack")
+    version = "unknown"
+    if gowin_pack:
+        try:
+            with open(gowin_pack) as f:
+                shebang = f.readline()
+            python = shebang[2:].strip() if shebang.startswith("#!") else sys.executable
+            r = subprocess.run(
+                python.split() + ["-c", "import importlib.metadata as m; print(m.version('Apycula'))"],
+                capture_output=True, text=True)
+            version = r.stdout.strip() or version
+        except OSError:
+            pass
+        if version == "unknown":
+            version = hashlib.sha256(Path(gowin_pack).read_bytes()).hexdigest()
+    lines.append("apicula " + version)
+    return "\n".join(lines)
+
+
+def hash_design(h, options):
+    """Adds every gateware source, the pin constraints and the Tools menu
+    options to hash h."""
     for name in GATEWARE_SOURCES + ["sys_parameters.v"]:
         h.update((GATEWARE_SRC / name).read_bytes())
     h.update(CST_FILE.read_bytes())
-    h.update(
-        f"ai_accel={int(ai_accel)},spi_count={spi_count},i2c_count={i2c_count},"
-        f"hw_muldiv={int(hw_muldiv)},i2s_rx={int(i2s_rx)},clk_freq_hz={clk_freq_hz},"
-        f"pll_idiv={pll_idiv},pll_fbdiv={pll_fbdiv},pll_odiv={pll_odiv},"
-        f"pwm_audio={int(pwm_audio)},flash_cache={int(flash_cache)},"
-        f"compressed={int(compressed)},barrel_shifter={int(barrel_shifter)},can={int(can)}".encode()
-    )
+    h.update(options.encode())
+
+
+def core_bitstream_cache_key(boot_image_path, options, version_stamp):
+    """Hashes everything that can affect a Boot Mode: Flash core bitstream,
+    independent of sketch content: the fixed core image (irq_vec.S/boot.S,
+    the only trace of those build_bitstream.py otherwise never reads), the
+    design (see hash_design()) and build_version_stamp()."""
+    h = hashlib.sha256()
+    h.update(boot_image_path.read_bytes())
+    hash_design(h, options)
+    h.update(version_stamp.encode())
     return h.hexdigest()
+
+
+# --- Routed-design cache (Boot Mode: SRAM) ----------------------------------
+#
+# For a given set of Tools options the placed-and-routed design is the same
+# for every sketch; only the program baked into the SRAM's block RAMs
+# differs, and that is just the INIT_RAM_xx parameters of those 32 cells.
+# So the first build for an option combination synthesizes and routes the
+# design with a "signature" placeholder in the SRAM - every (byte lane,
+# bit) column a distinct pseudo-random bit pattern, which identifies which
+# block RAM cell holds which column without relying on cell names - and
+# caches the routed netlist plus that cell map. Every later build only
+# writes its program into those cells' INIT parameters and runs gowin_pack:
+# about a minute instead of 15. Set NANOTANG_NO_ROUTED_CACHE=1 to force the
+# full flow.
+
+ROUTED_CACHE_DIR = Path.home() / ".cache" / "nanotang" / "routed"
+SRAM_LANES = 4
+SRAM_DEPTH = 1 << SRAM_ADDR_WIDTH
+BRAM_TYPES = set(BRAM_OCE_PORTS)
+
+
+def routed_cache_key(options, version_stamp):
+    h = hashlib.sha256()
+    hash_design(h, options)
+    h.update(f"sram_addr_width={SRAM_ADDR_WIDTH}".encode())
+    h.update(version_stamp.encode())
+    return h.hexdigest()
+
+
+def signature_columns():
+    """{(lane, bit): int} - bit a of the int is that column's value at SRAM
+    word a. Deterministic, and all 32 columns distinct."""
+    cols = {}
+    for lane in range(SRAM_LANES):
+        for bit in range(8):
+            cols[(lane, bit)] = random.Random(0x5EED + lane * 8 + bit).getrandbits(SRAM_DEPTH)
+    assert len(set(cols.values())) == len(cols)
+    return cols
+
+
+def write_mem_init(out_dir, columns):
+    """Writes mem_init0..3.ini (see gen_mem_init.py) from {(lane, bit): int}."""
+    for lane in range(SRAM_LANES):
+        lines = []
+        for a in range(SRAM_DEPTH):
+            byte = 0
+            for bit in range(8):
+                byte |= ((columns[(lane, bit)] >> a) & 1) << bit
+            lines.append(f"{byte:02x}")
+        (out_dir / f"mem_init{lane}.ini").write_text("\n".join(lines) + "\n")
+
+
+def program_columns(bin_path):
+    """{(lane, bit): int} for a program binary, like signature_columns()."""
+    data = bin_path.read_bytes()
+    if len(data) > SRAM_LANES * SRAM_DEPTH:
+        raise SystemExit(f"error: program is {len(data)} bytes, SRAM only holds "
+                         f"{SRAM_LANES * SRAM_DEPTH} bytes")
+    cols = {}
+    for lane in range(SRAM_LANES):
+        lane_bytes = data[lane::SRAM_LANES]
+        for bit in range(8):
+            v = 0
+            for a, byte in enumerate(lane_bytes):
+                if (byte >> bit) & 1:
+                    v |= 1 << a
+            cols[(lane, bit)] = v
+    return cols
+
+
+def cell_init_value(cell):
+    """A 1-bit-wide block RAM cell's contents as an int (bit a = address a).
+    INIT_RAM_xx are 256-character binary strings, most significant bit
+    first."""
+    v = 0
+    for r in range(64):
+        v |= int(cell["parameters"][f"INIT_RAM_{r:02X}"], 2) << (256 * r)
+    return v
+
+
+def set_cell_init_value(cell, v):
+    for r in range(64):
+        cell["parameters"][f"INIT_RAM_{r:02X}"] = format((v >> (256 * r)) & ((1 << 256) - 1), "0256b")
+
+
+def sram_cells(netlist):
+    return {name: cell for module in netlist["modules"].values()
+            for name, cell in module.get("cells", {}).items()
+            if cell["type"] == "SP" and int(cell["parameters"].get("BIT_WIDTH", "0"), 2) == 1}
+
+
+def map_signature_cells(netlist):
+    """{cell name: [lane, bit]} for the routed signature design, or None if
+    the SRAM wasn't mapped as the expected 32 16Kx1 block RAMs (then the
+    cache can't be used)."""
+    lookup = {v: key for key, v in signature_columns().items()}
+    cellmap = {}
+    for name, cell in sram_cells(netlist).items():
+        key = lookup.get(cell_init_value(cell))
+        if key is not None:
+            cellmap[name] = list(key)
+    if len(cellmap) != SRAM_LANES * 8 or len({tuple(k) for k in cellmap.values()}) != SRAM_LANES * 8:
+        return None
+    return cellmap
+
+
+def patch_program(netlist, cellmap, columns):
+    cells = sram_cells(netlist)
+    for name, (lane, bit) in cellmap.items():
+        set_cell_init_value(cells[name], columns[(lane, bit)])
 
 
 def main():
@@ -224,7 +414,18 @@ def main():
     data_bin_path = build_dir / "data.bin"
     run([objcopy, "-O", "binary", "--only-section=.flash_data", str(elf_path), str(data_bin_path)])
 
+    options = (
+        f"ai_accel={int(ai_accel)},spi_count={spi_count},i2c_count={i2c_count},"
+        f"hw_muldiv={int(hw_muldiv)},i2s_rx={int(i2s_rx)},clk_freq_hz={clk_freq_hz},"
+        f"pll_idiv={pll_idiv},pll_fbdiv={pll_fbdiv},pll_odiv={pll_odiv},"
+        f"pwm_audio={int(pwm_audio)},flash_cache={int(flash_cache)},"
+        f"compressed={int(compressed)},barrel_shifter={int(barrel_shifter)},can={int(can)},"
+        f"boot_flash={int(boot_flash)}"
+    )
+    version_stamp = build_version_stamp()
+
     cached_fs = None
+    routed_dir = None
     if boot_flash:
         # Fixed, sketch-independent core image for SRAM: just the IRQ
         # vector and the boot stub (see link_cmd.ld/boot.S) - everything
@@ -248,9 +449,7 @@ def main():
             str(elf_path), str(prog_flash_path),
         ])
 
-        cache_key = core_bitstream_cache_key(bin_path, ai_accel, spi_count, i2c_count, hw_muldiv, i2s_rx,
-                                              clk_freq_hz, pll_idiv, pll_fbdiv, pll_odiv, pwm_audio, flash_cache,
-                                              compressed, barrel_shifter, can)
+        cache_key = core_bitstream_cache_key(bin_path, options, version_stamp)
         cached_fs = CACHE_DIR / f"{cache_key}.fs"
         fs_path = build_dir / "prog.fs"
         if cached_fs.exists():
@@ -261,6 +460,24 @@ def main():
     else:
         bin_path = build_dir / "prog.bin"
         run([objcopy, "-O", "binary", "-R", ".flash_data", str(elf_path), str(bin_path)])
+
+        if os.environ.get("NANOTANG_NO_ROUTED_CACHE") != "1":
+            routed_dir = ROUTED_CACHE_DIR / routed_cache_key(options, version_stamp)
+            fs_path = build_dir / "prog.fs"
+            if (routed_dir / "pnrtop.json.gz").exists() and (routed_dir / "cellmap.json").exists():
+                # Fast path: only the program changes - patch it into the
+                # cached routed design and pack.
+                with gzip.open(routed_dir / "pnrtop.json.gz", "rt") as f:
+                    netlist = json.load(f)
+                cellmap = json.loads((routed_dir / "cellmap.json").read_text())
+                patch_program(netlist, cellmap, program_columns(bin_path))
+                pnr_json = build_dir / "pnrtop.json"
+                with open(pnr_json, "w") as f:
+                    json.dump(netlist, f)
+                print(f"Reused cached routed design ({routed_dir}) - skipped synthesis and place & route")
+                run(["gowin_pack", "-d", FAMILY, "-o", str(fs_path), str(pnr_json)])
+                print(f"Bitstream written to {fs_path}")
+                return 0
 
     # Copy the gateware sources into the build directory and generate this
     # program's SRAM init files there, next to them, where yosys's
@@ -273,13 +490,18 @@ def main():
     build_gateware.mkdir(parents=True, exist_ok=True)
     for name in GATEWARE_SOURCES + ["sys_parameters.v"]:
         shutil.copy(GATEWARE_SRC / name, build_gateware / name)
-    run([
-        sys.executable,
-        str(REPO_ROOT / "tools" / "gen_mem_init.py"),
-        str(bin_path),
-        str(SRAM_ADDR_WIDTH),
-        str(build_gateware),
-    ])
+    if routed_dir is not None:
+        # First build for these options: route with the signature
+        # placeholder, so the result can be cached (see routed_cache_key()).
+        write_mem_init(build_gateware, signature_columns())
+    else:
+        run([
+            sys.executable,
+            str(REPO_ROOT / "tools" / "gen_mem_init.py"),
+            str(bin_path),
+            str(SRAM_ADDR_WIDTH),
+            str(build_gateware),
+        ])
 
     # All gateware sources are always read - yosys prunes any module never
     # instantiated from `top` (confirmed via its "Removing unused module"
@@ -326,6 +548,9 @@ def main():
         "-p",
         f"{define} {' '.join(GATEWARE_SOURCES)}; synth_gowin -top top -json {json_path}",
     ], cwd=build_gateware)
+    changed = fix_bram_oce(json_path)
+    if changed:
+        print(f"Connected {changed} block RAM output enables (OCE) to their read enables - see fix_bram_oce()")
 
     pnr_json = build_dir / "pnrtop.json"
     run([
@@ -338,6 +563,31 @@ def main():
     ])
 
     fs_path = build_dir / "prog.fs"
+    if routed_dir is not None:
+        with open(pnr_json) as f:
+            netlist = json.load(f)
+        cellmap = map_signature_cells(netlist)
+        if cellmap is None:
+            # Unexpected SRAM mapping: can't cache. Redo the build with the
+            # real program in the SRAM instead of the signature.
+            print("warning: SRAM block RAMs not mapped as expected - routed-design cache not used")
+            os.environ["NANOTANG_NO_ROUTED_CACHE"] = "1"
+            return main()
+        # Store atomically: a half-written entry must never look complete.
+        tmp_dir = routed_dir.with_name(routed_dir.name + f".tmp{os.getpid()}")
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        tmp_dir.mkdir(parents=True)
+        with gzip.open(tmp_dir / "pnrtop.json.gz", "wt") as f:
+            json.dump(netlist, f)
+        (tmp_dir / "cellmap.json").write_text(json.dumps(cellmap))
+        (tmp_dir / "key.txt").write_text(options + "\n" + version_stamp + "\n")
+        shutil.rmtree(routed_dir, ignore_errors=True)
+        os.replace(tmp_dir, routed_dir)
+        print(f"Cached routed design at {routed_dir} for future fast builds")
+        patch_program(netlist, cellmap, program_columns(bin_path))
+        with open(pnr_json, "w") as f:
+            json.dump(netlist, f)
+
     run(["gowin_pack", "-d", FAMILY, "-o", str(fs_path), str(pnr_json)])
 
     if cached_fs is not None:
