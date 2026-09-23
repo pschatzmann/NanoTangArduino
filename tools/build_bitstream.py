@@ -262,20 +262,24 @@ def main():
         bin_path = build_dir / "prog.bin"
         run([objcopy, "-O", "binary", "-R", ".flash_data", str(elf_path), str(bin_path)])
 
-    # Regenerate the SRAM init files in place, alongside the rest of the
-    # gateware sources, so the yosys read_verilog below picks them up.
+    # Copy the gateware sources into the build directory and generate this
+    # program's SRAM init files there, next to them, where yosys's
+    # read_verilog below picks them up. Never in gateware/src/: its
+    # mem_init*.ini are checked-in placeholders (read by the yosys checks
+    # and simulations in tools/), and writing there made every build
+    # dirty the working tree - and two builds running at the same time
+    # could bake each other's program into their bitstreams.
+    build_gateware = build_dir / "gateware"
+    build_gateware.mkdir(parents=True, exist_ok=True)
+    for name in GATEWARE_SOURCES + ["sys_parameters.v"]:
+        shutil.copy(GATEWARE_SRC / name, build_gateware / name)
     run([
         sys.executable,
         str(REPO_ROOT / "tools" / "gen_mem_init.py"),
         str(bin_path),
         str(SRAM_ADDR_WIDTH),
-        str(GATEWARE_SRC),
+        str(build_gateware),
     ])
-
-    build_gateware = build_dir / "gateware"
-    build_gateware.mkdir(parents=True, exist_ok=True)
-    for name in GATEWARE_SOURCES + [f"mem_init{i}.ini" for i in range(4)] + ["sys_parameters.v"]:
-        shutil.copy(GATEWARE_SRC / name, build_gateware / name)
 
     # All gateware sources are always read - yosys prunes any module never
     # instantiated from `top` (confirmed via its "Removing unused module"
