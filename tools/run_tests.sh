@@ -132,8 +132,9 @@ CFG
 
   # nextpnr's "Device utilisation" block, condensed to the main resources.
   utilization() {
-    awk '/Device utilisation/{on=1; next} on && /^Info:[[:space:]]+[A-Za-z0-9_]+:[[:space:]]+[0-9]+\/[0-9]+/{print} on && !/^Info:[[:space:]]+[A-Za-z0-9_]+:/{on=0}' "$1" |
-      grep -E "LUT4|DFF|ALU|BSRAM|MULT|SSRAM|RAM16" | sed -E 's/^Info:[[:space:]]+/        /'
+    # Lines look like "Info: <tab>  LUT4:   14982/  20736    72%".
+    awk '/Device utilisation/{on=1; next} on && /^Info:[[:space:]]+[A-Za-z0-9_]+:[[:space:]]+[0-9]+\/[[:space:]]*[0-9]+/{print; next} on{on=0}' "$1" |
+      grep -E "LUT4|DFF|ALU|BSRAM|MULT|RAM16" | sed -E 's/^Info:[[:space:]]+/        /'
   }
 
   # build <label> <fqbn suffix> <sketch dir> <mode: compile|fpga>
