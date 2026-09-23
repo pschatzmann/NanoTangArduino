@@ -1,5 +1,25 @@
 # Peripherals
 
+## Serial and `printf`
+
+`Serial` runs over the onboard BL616's USB-UART bridge (8N1 only; see
+[Known limitations](KNOWN_LIMITATIONS.md) for which USB port to open).
+`gateware/src/uart_wrap.v` puts a 64-byte receive FIFO and a 32-byte
+transmit FIFO in front of the UART. Incoming bytes wait in hardware until
+`read()` collects them (about 5.5ms of slack at 115200 baud), and
+`write()` only blocks once 32 bytes are queued. `availableForWrite()`
+reports the free TX space, `flush()` waits until the last stop bit has
+gone out, and `Serial.overflow()` reports (and clears) whether received
+bytes were lost because the FIFO was full. A sketch-defined
+`serialEvent()` is called after each `loop()` while bytes are waiting.
+
+The core has a compact `printf` family (`tangnano20k_printf.c`):
+`printf()`/`puts()` write to `Serial`, and `snprintf()`/`sprintf()`/
+`vsnprintf()` format into a buffer. It covers the usual integer, string,
+character, pointer and floating-point conversions (`%f`/`%e`/`%g` are
+software-emulated, since there's no FPU), but not `%n`/`%a` or wide
+characters.
+
 ## Digital I/O and PWM
 
 Pins 0-5 are the 6 onboard LEDs: `pinMode`/`digitalWrite`/`digitalRead`
@@ -7,7 +27,7 @@ work, plus `analogWrite()` (real hardware PWM, `gateware/src/pwm_bank.v`) —
 calling it switches that LED into PWM mode; a later `digitalWrite()`/`pinMode()`
 call switches it back to plain on/off, matching real-Arduino behavior. Pin
 6 (`BTN1`) is the board's second button (KEY_S2), `digitalRead`-only.
-Pins 14-35 (`GPIO0`-`GPIO21`) are real general-purpose I/O — see
+Pins 14-34 (`GPIO0`-`GPIO20`) are real general-purpose I/O — see
 [General GPIO](#general-gpio) below. There's no `analogRead()` — the board
 has no ADC wired to any pin, so that function is stubbed to always
 return 0.
@@ -32,12 +52,29 @@ PWM mode, otherwise at its next `analogWrite()`.
 | Maximum | 13.5MHz | `F_CPU/2` |
 | Minimum | ~1.6Hz | `F_CPU/2^24` |
 
-Values stay Arduino's 0-255 at any frequency (0 = always low, 255 =
-always high), but the real resolution is `log2(F_CPU/hz)` bits. Above the
-default frequency, neighboring values start mapping to the same duty
-cycle, and at the maximum only 0%/50%/100% remain. A new value takes
-effect at the start of the next PWM period, so no pulse is ever cut
-short. See `libraries/Core/examples/PWMFrequency` (includes a 50Hz servo).
+Values are Arduino's 0-255 by default at any frequency (0 = always low,
+255 = always high). `analogWriteResolution(bits)` (1-16) changes the range
+to 0..2^bits-1, for example 12 bits for 0-4095. The real resolution is
+`log2(F_CPU/hz)` bits, up to 16. Above the default frequency, neighboring
+values start mapping to the same duty cycle, and at the maximum only
+0%/50%/100% remain. 16 useful bits need `hz` <= `F_CPU/65536` (~412Hz at
+27MHz). A new value takes effect at the start of the next PWM period, so
+no pulse is ever cut short. See `libraries/Core/examples/PWMFrequency`.
+
+The same channels also serve `tone()` and the `Servo` library, so all
+three together are limited to 6 pins at once:
+
+- **`tone()`** plays a hardware 50% square wave from a channel, with no
+  CPU load. A timer is only used to end it after `duration`. Only when
+  all channels are busy does it fall back to toggling the pin from a
+  timer interrupt. One tone plays at a time; a new `tone()` replaces the
+  current one.
+- **`Servo`** (`#include <Servo.h>`, `libraries/Servo/`) has the standard
+  Arduino API (`attach()`, `write()` in degrees, `writeMicroseconds()`,
+  `read()`, `detach()`). Each servo runs a 50Hz frame on a channel with
+  ~0.33us pulse resolution at 27MHz, and uses no interrupts. `attach()`
+  returns `INVALID_SERVO` if no channel is free. See
+  `libraries/Servo/examples/ServoSweep`.
 
 ## General GPIO
 
@@ -45,6 +82,19 @@ short. See `libraries/Core/examples/PWMFrequency` (includes a 50Hz servo).
 `digitalWrite`/`digitalRead` GPIO, as `GPIO0`-`GPIO20` (pins 14-34). Unlike
 the LED/`BTN1` pins above, `pinMode()` here actually changes hardware
 direction.
+
+Every GPIO pin has a weak pull-up, fixed at synthesis time in
+`gateware/picorv32_20k.cst` (Gowin pull modes can't be switched at run
+time). So `INPUT_PULLUP` works for buttons wired to ground, `INPUT`
+behaves the same (an undriven pin reads `HIGH` rather than floating), and
+`INPUT_PULLDOWN` isn't available. `OUTPUT_OPENDRAIN` is emulated on top of
+the pull-up: `digitalWrite(LOW)` drives the pin low, `digitalWrite(HIGH)`
+releases it.
+
+`digitalWrite()` changes a pin with a single write to a SET/CLR register
+(`TANGNANO20K_GPIO_OUT_SET_REG`/`..._CLR_REG`, and `TANGNANO20K_LED_SET_REG`/
+`..._CLR_REG` for the LEDs) rather than a read-modify-write, so it's safe
+to call from an interrupt handler while `loop()` is writing other pins.
 
 These are 21 of the official datasheet's "34 free IOs" on the J5/J6
 expansion headers — the other 13 header positions are the *same physical
@@ -94,15 +144,38 @@ compile-time lookups both ways: `TANGNANO20K_PHYSICAL_PIN(GPIOn)` (e.g.
 ## WS2812 LED
 
 `#include <WS2812.h>` (`libraries/WS2812/`). `WS2812.write(r, g, b)` sets
-the onboard addressable RGB LED (physical FPGA pin 79) - it blocks (via
-bus backpressure, not a software poll loop) until the peripheral can
-accept the next pixel. Backed by `gateware/src/ws2812b.v`/`ws2812b_tgt.v`,
-vendored unmodified from
-[grughuhler/picorv32_tang_nano_20k](https://github.com/grughuhler/picorv32_tang_nano_20k)
-(BSD-2-Clause) - a real hardware shift-timer, not software bit-banging,
-since WS2812's protocol needs ~400ns-precision pulses well beyond what's
-reliably achievable in C at this core's default 27MHz. See
-`libraries/WS2812/examples/WS2812Rainbow`.
+the onboard addressable RGB LED (physical FPGA pin 79).
+
+`WS2812Strip` drives an external strip of any length on any GPIO pin,
+with an Adafruit_NeoPixel-style API (`begin()`, `setPixelColor()`,
+`fill()`, `setBrightness()`, `show()`, `Color()`, `ColorHSV()`); the pixel
+buffer lives on the SDRAM heap:
+
+```cpp
+WS2812Strip strip(30, GPIO0);
+strip.begin();
+strip.setPixelColor(0, 255, 0, 0);
+strip.show();
+```
+
+Both are backed by `gateware/src/ws2812_strip.v`, a hardware shift-timer
+rather than software bit-banging, since WS2812's protocol needs
+~400ns-precision pulses. It streams back-to-back pixels as one frame and
+latches the frame (~300us low) only once no further pixel is queued.
+`show()` disables interrupts while the pixels go out (~30us per pixel),
+because a pause of more than ~50us mid-frame would latch a partial one.
+That can delay other interrupt work, such as I2S buffering or
+`SoftwareSerial` reception, by that long.
+
+There's one hardware driver: each `show()` routes it to that strip's
+pin, so several strips work, one after another. While a strip on a GPIO
+pin is being driven, the onboard LED is left alone. See
+`libraries/WS2812/examples/WS2812Rainbow` and `WS2812StripRainbow`.
+
+This replaces `ws2812b.v`/`ws2812b_tgt.v` vendored from
+[grughuhler/picorv32_tang_nano_20k](https://github.com/grughuhler/picorv32_tang_nano_20k),
+which sent a latch pulse after every pixel, so it could only ever drive a
+single LED.
 
 ## Audio (I2S)
 
@@ -272,15 +345,23 @@ Both are present by default but independently configurable via
   below.
 
 - **SPI** (`#include <SPI.h>`, `libraries/SPI/`, backed by
-  `gateware/src/spi_master.v`): a real hardware shift register, mode 0
-  only, MSB-first. There's a single fixed CS line asserted for the
+  `gateware/src/spi_master.v`): a real hardware shift register supporting
+  all four SPI modes and both bit orders, taken from `SPISettings`. The
+  clock is the fastest `F_CPU/(2n)` that doesn't exceed the requested
+  one, at most `F_CPU/2`. There's a single fixed CS line asserted for the
   duration of `beginTransaction()`/`endTransaction()`, not a
   general-purpose CS pin — only one SPI device at a time. See
   `libraries/SPI/examples/SPITransfer`.
 - **I2C** (`#include <Wire.h>`, `libraries/Wire/`, backed by
   `gateware/src/od_gpio2.v`): bit-banged in software over an open-drain
   SDA/SCL pair (internal pull-ups enabled in the `.cst`), master mode
-  only. See `libraries/Wire/examples/I2CScanner`.
+  only, with bit timing from the cycle counter, so 400kHz is reachable.
+  A device holding SCL low is waited for only up to the timeout (25ms by
+  default, `setWireTimeout()`/`getWireTimeoutFlag()`/
+  `clearWireTimeoutFlag()` as on AVR). After that the transfer is
+  abandoned: `endTransmission()` returns 5 and `requestFrom()` returns 0,
+  so a missing pull-up or a stuck device can't hang the sketch. See
+  `libraries/Wire/examples/I2CScanner`.
 
 | Object | Menu | Function | Pin printed on the device |
 |---|---|---|---|
@@ -478,8 +559,9 @@ against the free-running `systick` counter (not the countdown register
 itself, which is only ever armed for whichever deadline is soonest), so
 timers don't drift and re-arming never needs to "peek" a decrementing
 register mid-countdown. There are `TANGNANO20K_SW_TIMER_COUNT` (6) slots
-total; `tone()` always occupies one, leaving up to 5 concurrent `TangTimer`
-instances.
+total; one is reserved for `tone()` (which needs it only to end a timed
+tone, or when it has to fall back to toggling the pin), leaving up to 5
+concurrent `TangTimer` instances.
 
 See `libraries/Core/examples/ButtonInterrupt`, `libraries/Core/examples/ToneTest`,
 `libraries/TangTimer/examples/TangTimerBlink`.
@@ -647,11 +729,28 @@ speeds up every integer `*`/`/`/`%` in a sketch, and indirectly speeds up
 routines are themselves built from integer multiplies and shifts - see
 [Known limitations](KNOWN_LIMITATIONS.md) for why floating-point itself
 is always software-emulated regardless (picorv32 has no FPU option at
-all). The compiler flag (`-march=rv32im_zicsr_zifencei` instead
-of the default `rv32i2p0`) and the gateware always change together from
-this one menu choice - never set independently, since a sketch compiled
-expecting hardware `mul`/`div` would execute an illegal instruction on a
-bitstream built without this enabled.
+all). The compiler flag (the `m` in `-march=rv32im_zicsr_zifencei`) and the
+gateware always change together from this one menu choice - never set
+independently, since a sketch compiled expecting hardware `mul`/`div`
+would execute an illegal instruction on a bitstream built without this
+enabled.
+
+**Tools > Compressed Instructions** (disabled by default) enables the
+RISC-V "C" extension (`COMPRESSED_ISA` in `top.v`, plus the `c` in
+`-march`, again always together). Many instructions get a 16-bit
+encoding: a sketch using Serial, SPI, Wire, Servo and WS2812 went from
+26.2KB to 21.6KB of code (about 18% smaller) - the option to reach for
+when a sketch gets close to the 64KB SRAM limit. It costs some LUTs,
+and a 32-bit instruction that straddles a word boundary can take an extra
+fetch cycle. libgcc stays the uncompressed build (the toolchain has no
+RV32IC variant), which a C-capable CPU runs unchanged.
+
+**Tools > Barrel Shifter** (disabled by default) makes every shift a
+single-cycle operation (`BARREL_SHIFTER` in `top.v`) instead of one cycle
+per bit position. It's gateware only - no compiler change. Shifts are
+everywhere (bit manipulation, CRCs, fixed-point math, and libgcc's
+software floating-point routines), so this speeds up more than it sounds,
+for a few hundred LUTs.
 
 ## Clock architecture
 

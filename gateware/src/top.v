@@ -3,16 +3,20 @@
  * Derived from grughuhler/picorv32_tang_nano_20k's top.v (BSD-2-Clause),
  * trimmed for v1 (LEDs + UART only, WS2812B/countdown timer dropped) and
  * extended with a free-running systick peripheral for millis()/micros();
- * the same project's ws2812b.v/ws2812b_tgt.v were later vendored back in
- * unchanged for the onboard WS2812 LED (see docs/PERIPHERALS.md "WS2812 LED").
+ * the onboard WS2812 LED (and optional external strips) are driven by
+ * ws2812_strip.v (see docs/PERIPHERALS.md "WS2812 LED").
  *
  * Memory map:
  *   0x0000_0000 - SRAM_BYTES-1   SRAM (program + data, size set by
  *                                 SRAM_ADDR_WIDTH, see sys_parameters.v)
  *   0x8000_0000                  LEDs (bits [5:0], read/write)
+ *   0x8000_0004                  UART status register (FIFO levels, see uart_wrap.v)
  *   0x8000_0008                  UART clock divisor register
  *   0x8000_000c                  UART data register
- *   0x8000_0020                  systick free-running counter (read-only)
+ *   0x8000_0010 - 0x8000_0018    LED SET/CLR/TOGGLE (write 1 bits to act)
+ *   0x8000_0020                  systick free-running cycle counter (read-only)
+ *   0x8000_0024                  systick microsecond counter (read-only)
+ *   0x8000_0028                  systick millisecond counter (read-only)
  *   0x8000_0040                  I2S BCLK phase increment register (write)
  *   0x8000_0044                  I2S transmit data register: {left16,right16} (write)
  *   0x8000_0048                  I2S control register: bit0 = PA_EN (write)
@@ -42,10 +46,13 @@
  *   0x8000_0104                  GPIO output register (bits [20:0])
  *   0x8000_0108                  GPIO input register (bits [20:0],
  *                                 read-only, valid regardless of direction)
- *   0x8000_0110                  WS2812 LED: write {G[7:0],R[7:0],B[7:0]}
- *                                 in bits [23:0] (write blocks/backpressures
- *                                 until the peripheral can accept the next
- *                                 pixel - see ws2812b.v)
+ *   0x8000_00c0 - 0x8000_00c8    GPIO OUT SET/CLR/TOGGLE (write 1 bits to act)
+ *   0x8000_00d0 - 0x8000_00d4    GPIO DIR SET/CLR (write 1 bits to act)
+ *   0x8000_0110                  WS2812 data: write {G[7:0],R[7:0],B[7:0]}
+ *                                 in bits [23:0] to queue a pixel (stalls
+ *                                 while one is already queued); read bit0 =
+ *                                 busy (see ws2812_strip.v)
+ *   0x8000_0114                  WS2812 config: GPIO routing (see ws2812_strip.v)
  *
  * GPIO covers 21 of the J5/J6 expansion header's 34 free I/O pins (per
  * the official datasheet's pinout table) - the other 13 are the same
@@ -280,6 +287,7 @@ module top
    wire              sdram_ready;
    wire [31:0]       sdram_rdata;
    wire              gpio_sel;
+   wire              gpio_atomic_sel;
    wire              gpio_ready;
    wire [31:0]       gpio_rdata;
    wire              ai_sel;
@@ -287,6 +295,9 @@ module top
    wire [31:0]       ai_rdata;
    wire              ws2812_sel;
    wire              ws2812_ready;
+   wire [31:0]       ws2812_rdata;
+   wire [20:0]       ws2812_gpio_override;
+   wire [20:0]       ws2812_gpio_value;
    wire              extirq_enable_sel;
    wire              extirq_status_sel;
    wire              extirq_level_sel;
@@ -308,9 +319,11 @@ module top
 
    assign sram_sel    = mem_valid && (mem_addr < MEMBYTES);
    assign sdram_sel   = mem_valid && ((mem_addr & 32'hff80_0000) == 32'h1000_0000);
-   assign leds_sel    = mem_valid && (mem_addr == 32'h8000_0000);
-   assign uart_sel    = mem_valid && ((mem_addr & 32'hffff_fff8) == 32'h8000_0008);
-   assign systick_sel = mem_valid && (mem_addr == 32'h8000_0020);
+   assign leds_sel    = mem_valid && ((mem_addr == 32'h8000_0000) ||
+                                      ((mem_addr & 32'hffff_fff0) == 32'h8000_0010));
+   assign uart_sel    = mem_valid && ((mem_addr == 32'h8000_0004) ||
+                                      ((mem_addr & 32'hffff_fff8) == 32'h8000_0008));
+   assign systick_sel = mem_valid && ((mem_addr & 32'hffff_fff0) == 32'h8000_0020);
    assign i2s_sel     = mem_valid && ((mem_addr & 32'hffff_fff0) == 32'h8000_0040);
    // I2S FIFO IRQ_ENABLE/STATUS registers (see i2s.v) - a separate 16-byte
    // window from i2s_sel above, clear of ai_sel's 0x140-0x15F range and
@@ -322,7 +335,8 @@ module top
    assign spi_sel     = mem_valid && ((mem_addr & 32'hffff_fff0) == 32'h8000_0080);
    assign i2c_sel     = mem_valid && (mem_addr == 32'h8000_0090);
    assign gpio_sel    = mem_valid && ((mem_addr & 32'hffff_fff0) == 32'h8000_0100);
-   assign ws2812_sel  = mem_valid && (mem_addr == 32'h8000_0110);
+   assign gpio_atomic_sel = mem_valid && ((mem_addr & 32'hffff_ffe0) == 32'h8000_00c0);
+   assign ws2812_sel  = mem_valid && ((mem_addr & 32'hffff_fff8) == 32'h8000_0110);
    assign ai_sel      = mem_valid && ((mem_addr & 32'hffff_ffe0) == 32'h8000_0140);
    assign extirq_enable_sel = mem_valid && (mem_addr == 32'h8000_0120);
    assign extirq_status_sel = mem_valid && (mem_addr == 32'h8000_0124);
@@ -394,7 +408,7 @@ module top
                       spi_sel     ? spi_rdata :
                       i2c_sel     ? i2c_rdata :
                       sdram_sel   ? sdram_rdata :
-                      gpio_sel    ? gpio_rdata :
+                      (gpio_sel | gpio_atomic_sel) ? gpio_rdata :
                       ai_sel      ? ai_rdata :
                       (extirq_enable_sel | extirq_status_sel | extirq_level_sel) ?
                         extirq_rdata :
@@ -402,7 +416,8 @@ module top
                       flash_sel    ? flash_rdata :
                       spi2_sel     ? spi2_rdata :
                       i2c2_sel     ? i2c2_rdata :
-                      pwm_audio_sel ? pwm_audio_rdata : 32'h0;
+                      pwm_audio_sel ? pwm_audio_rdata :
+                      ws2812_sel   ? ws2812_rdata : 32'h0;
 
    // Per-LED mux: PWM output while analogWrite() has a channel on that LED,
    // else the plain digital value from tang_leds.
@@ -435,11 +450,12 @@ module top
       .uart_ready(uart_ready)
       );
 
-   systick tick
+   systick #(.CLK_FREQ(CLK_FREQ)) tick
      (
       .clk(clk_sys),
       .reset_n(reset_n),
       .systick_sel(systick_sel),
+      .addr(mem_addr[3:0]),
       .systick_ready(systick_ready),
       .systick_data_o(systick_data_o)
       );
@@ -562,13 +578,15 @@ module top
       .clk(clk_sys),
       .reset_n(reset_n),
       .sel(gpio_sel),
-      .addr(mem_addr[3:0]),
+      .atomic_sel(gpio_atomic_sel),
+      .addr(mem_addr[4:0]),
       .wstrb(mem_wstrb),
       .wdata(mem_wdata),
       .ready(gpio_ready),
       .rdata(gpio_rdata),
-      .override(pwm_gpio_override),
-      .override_value(pwm_gpio_value),
+      // A pin can be claimed by a PWM channel or the WS2812 driver.
+      .override(pwm_gpio_override | ws2812_gpio_override),
+      .override_value(pwm_gpio_value | ws2812_gpio_value),
       .gpio({gpio[20:18],
 `ifdef WITH_PWM_AUDIO
              gpio_bank_dummy_pwm_audio,
@@ -672,15 +690,19 @@ module top
       .irq_out(extirq_out)
       );
 
-   ws2812b_tgt #(.CLK_FREQ(CLK_FREQ)) ws2812
+   ws2812_strip #(.CLK_FREQ(CLK_FREQ)) ws2812
      (
       .clk(clk_sys),
       .reset_n(reset_n),
-      .ws2812b_sel(ws2812_sel),
+      .sel(ws2812_sel),
+      .addr(mem_addr[3:0]),
       .we(|mem_wstrb),
-      .wdata(mem_wdata[23:0]),
-      .ws2812b_ready(ws2812_ready),
-      .to_din(ws2812_din)
+      .wdata(mem_wdata),
+      .ready(ws2812_ready),
+      .rdata(ws2812_rdata),
+      .to_din(ws2812_din),
+      .gpio_override(ws2812_gpio_override),
+      .gpio_value(ws2812_gpio_value)
       );
 
 `ifdef WITH_AI_ACCEL
@@ -743,6 +765,7 @@ module top
       .clk(clk_sys),
       .reset_n(reset_n),
       .leds_sel(leds_sel),
+      .addr(mem_addr[4:0]),
       .leds_data_i(mem_wdata[5:0]),
       .we(mem_wstrb[0]),
       .leds_ready(leds_ready),
@@ -754,8 +777,20 @@ module top
        .STACKADDR(STACKADDR),
        .PROGADDR_RESET(PROGADDR_RESET),
        .PROGADDR_IRQ(PROGADDR_IRQ),
+       // Tools > Barrel Shifter: single-cycle shifts (gateware only).
+`ifdef WITH_BARREL_SHIFTER
+       .BARREL_SHIFTER(1),
+`else
        .BARREL_SHIFTER(0),
+`endif
+       // Tools > Compressed Instructions: the RISC-V "C" extension. MUST
+       // stay paired with the "c" in compiler.march (see platform.txt/
+       // boards.txt), exactly like ENABLE_MUL below.
+`ifdef WITH_COMPRESSED_ISA
+       .COMPRESSED_ISA(1),
+`else
        .COMPRESSED_ISA(0),
+`endif
 `ifdef WITH_HW_MULDIV
        // Tools > Hardware Multiply/Divide: Enabled - real M-extension
        // mul/div opcodes instead of software emulation, matching

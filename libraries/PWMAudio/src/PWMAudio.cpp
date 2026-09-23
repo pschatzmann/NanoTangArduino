@@ -59,11 +59,11 @@ bool PWMAudioClass::begin(void)
   }
   config_.ringSamples = ringCapacity_;
 
-  noInterrupts();
+  uint32_t irqState = tangnano20k_irq_save();
   ringHead_ = 0;
   ringTail_ = 0;
   ringCount_ = 0;
-  interrupts();
+  tangnano20k_irq_restore(irqState);
 
   // Writing PERIOD also resets both outputs to 50% duty (silence).
   TANGNANO20K_PWM_AUDIO_PERIOD_REG = clockDivider(config_.pwmRate, 50000, 0xFFFF);
@@ -83,11 +83,11 @@ void PWMAudioClass::end(void)
   if (!started_)
     return;
   TANGNANO20K_PWM_AUDIO_CTRL_REG = TANGNANO20K_PWM_AUDIO_CTRL_FLUSH;
-  noInterrupts();
+  uint32_t irqState = tangnano20k_irq_save();
   ringHead_ = 0;
   ringTail_ = 0;
   ringCount_ = 0;
-  interrupts();
+  tangnano20k_irq_restore(irqState);
   frameLen_ = 0;
   started_ = false;
 }
@@ -100,7 +100,7 @@ void PWMAudioClass::ringPush(uint32_t sample)
 {
   while (true)
   {
-    noInterrupts();
+    uint32_t irqState = tangnano20k_irq_save();
     bool hasRoom = (ringCount_ < ringCapacity_);
     if (hasRoom)
     {
@@ -109,7 +109,7 @@ void PWMAudioClass::ringPush(uint32_t sample)
       ringCount_++;
       TANGNANO20K_PWM_AUDIO_CTRL_REG = TANGNANO20K_PWM_AUDIO_CTRL_ENABLE | TANGNANO20K_PWM_AUDIO_CTRL_IRQEN;
     }
-    interrupts();
+    tangnano20k_irq_restore(irqState);
     if (hasRoom)
       return;
     // Ring is full - spin until serviceIrq() (background IRQ) drains it.

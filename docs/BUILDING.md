@@ -212,12 +212,43 @@ LUT4s.
 | Disabled (default) | `:flash_cache=disabled` |
 | Enabled | `:flash_cache=enabled` |
 
+### Compressed Instructions
+
+See [Peripherals: CPU features](PERIPHERALS.md#cpu-features). **Disabled
+by default** - enabling it builds the CPU with the RISC-V "C" extension
+and compiles with a matching `-march`, for about 18% smaller code at the
+cost of some LUTs.
+
+| Option | FQBN suffix |
+|---|---|
+| Disabled (default) | `:compressed=disabled` |
+| Enabled | `:compressed=enabled` |
+
+### Barrel Shifter
+
+See [Peripherals: CPU features](PERIPHERALS.md#cpu-features). **Disabled
+by default** - enabling it makes every shift single-cycle, for a few
+hundred LUTs. Gateware only; the compiler flags don't change.
+
+| Option | FQBN suffix |
+|---|---|
+| Disabled (default) | `:barrel_shifter=disabled` |
+| Enabled | `:barrel_shifter=enabled` |
+
 ## Verifying changes
 
 ```sh
-tools/run_tests.sh          # yosys hierarchy check + compile every example
+tools/run_tests.sh          # yosys hierarchy check + tools/sim tests + compile every example
 tools/run_tests.sh --full   # also run one standalone full synth_gowin pass on the gateware (slow, ~1-2 min)
 ```
+
+`tools/sim/run_sims.sh` (also run on its own in seconds) simulates the
+Arduino-core gateware with iverilog - systick counters, UART FIFOs,
+GPIO/LED set/clear registers, SPI in all four modes against a
+spec-following slave model, WS2812 strip streaming - and tests the core's
+`printf` family and `mem*()` functions against glibc on the host. Needs
+`iverilog` and a host `gcc`; each part is skipped with a warning if the
+tool is missing.
 
 Every example compile goes through the full FPGA flow (synthesis, place &
 route, and pack), the same as an actual upload in the default SRAM boot

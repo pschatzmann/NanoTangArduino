@@ -47,14 +47,6 @@
   sketch - a direct call's machine code would otherwise encode that
   link-time distance, breaking the "identical core image" property this
   caching depends on.
-- **`millis()`/`micros()` wrap much sooner than a real Arduino board.**
-  `systick` is a raw cycle counter at whatever the Tools > Clock Speed menu
-  selects (27MHz by default), so it wraps roughly every 160 seconds at
-  27MHz (faster at Overclocked, slower at Low Power), versus ~49 days on
-  AVR. Code that compares
-  `millis()`/`micros()` with unsigned subtraction (the standard Arduino
-  idiom, e.g. `if (millis() - last >= interval)`) is unaffected by wrapping
-  at any period.
 - **No FPU.** picorv32 has no floating-point extension option at all - every
   `float`/`double` operation compiles to a call into libgcc's software
   floating-point routines (`__adddf3`, `__muldf3`, `__divdf3`, etc.), each
@@ -65,8 +57,6 @@
   path to real single-cycle float math on this core. Prefer fixed-point
   (integer-scaled) arithmetic in hot loops, or the AI accelerator's INT8
   path where applicable.
-- The RV32I base ISA has no compressed-instruction support
-  (`COMPRESSED_ISA(0)`), matching the reference SoC.
 - **DMA's async/background mode only reaches the embedded SDRAM heap, and
   can't be extended to the internal SRAM** (see [DMA](PERIPHERALS.md#dma)).
   This needs true dual-port BRAM (the CPU's existing port plus an

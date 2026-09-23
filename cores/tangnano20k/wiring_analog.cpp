@@ -12,8 +12,14 @@
  * to what AVR Arduinos do on non-PWM pins: HIGH for values >= 128, LOW
  * below.
  *
- * Values are Arduino's usual 0-255, scaled onto the channel's period, so
- * 0 is always low and 255 always high at any frequency. */
+ * Values are Arduino's usual 0-255 by default, or 0..2^bits-1 after
+ * analogWriteResolution(bits) (1-16 bits), scaled onto the channel's
+ * period, so 0 is always low and the maximum always high at any
+ * frequency. Internally every pin's duty is kept at 16-bit resolution.
+ *
+ * The channel tables are also updated from interrupt context (tone()'s
+ * duration timer releases its channel), so allocation and release run
+ * inside a critical section. */
 
 #define PWM_PINS   (TANGNANO20K_NUM_LEDS + TANGNANO20K_GPIO_COUNT)
 #define NO_CHANNEL 0xFF
@@ -21,9 +27,10 @@
 /* Per-pin state, indexed by pwmIndex(): LEDs 0-5, then GPIO0-GPIO20 -
  * the same numbering as pwm_bank.v's CFG target field. */
 static uint32_t pinFrequency[PWM_PINS]; // 0 = default (F_CPU/256)
-static uint8_t pinValue[PWM_PINS];      // last analogWrite() value
+static uint16_t pinDuty[PWM_PINS];      // last duty, 0 (low) - 65535 (high)
 static uint8_t pinChannel[PWM_PINS];    // channel+1, 0 = not in PWM mode
 static bool channelUsed[TANGNANO20K_PWM_CHANNELS];
+static uint8_t writeResolution = 8;
 
 /* Maps an Arduino pin number to an index into the tables above, or -1 if
  * the pin has no PWM support. */
@@ -49,9 +56,9 @@ static void setChannel(int idx, uint8_t ch)
 }
 
 /* Programs channel `ch` for pin index `idx` from its stored frequency and
- * value: splits F_CPU/frequency clock cycles per PWM period into the
+ * duty: splits F_CPU/frequency clock cycles per PWM period into the
  * smallest prescaler that lets the period fit in 16 bits (maximizing
- * resolution), then scales the 0-255 value onto that period. */
+ * resolution), then scales the 16-bit duty onto that period. */
 static void programChannel(uint8_t ch, int idx)
 {
   uint32_t cycles = pinFrequency[idx] ? (uint32_t)(F_CPU / pinFrequency[idx]) : 256;
@@ -66,7 +73,8 @@ static void programChannel(uint8_t ch, int idx)
     period = 65536;
   period -= 1;
 
-  uint32_t duty = ((uint32_t)pinValue[idx] * (period + 1) + 127) / 255;
+  // Fits 32 bits: at most 65535 * 65536 + 32767.
+  uint32_t duty = ((uint32_t)pinDuty[idx] * (period + 1) + 32767) / 65535;
 
   TANGNANO20K_PWM_CFG_REG(ch) = TANGNANO20K_PWM_CFG(period, prescale, idx);
   TANGNANO20K_PWM_DUTY_REG(ch) = TANGNANO20K_PWM_ENABLE | duty;
@@ -78,25 +86,27 @@ static void writeDigitalFallback(int idx, bool high)
 {
   if (idx < TANGNANO20K_NUM_LEDS) {
     uint32_t mask = 1UL << idx;
-    TANGNANO20K_LED_REG = high ? (TANGNANO20K_LED_REG | mask) : (TANGNANO20K_LED_REG & ~mask);
+    if (high)
+      TANGNANO20K_LED_SET_REG = mask;
+    else
+      TANGNANO20K_LED_CLR_REG = mask;
     return;
   }
   uint32_t mask = 1UL << (idx - TANGNANO20K_NUM_LEDS);
-  TANGNANO20K_GPIO_DIR_REG = TANGNANO20K_GPIO_DIR_REG | mask;
-  TANGNANO20K_GPIO_OUT_REG = high ? (TANGNANO20K_GPIO_OUT_REG | mask) : (TANGNANO20K_GPIO_OUT_REG & ~mask);
+  TANGNANO20K_GPIO_DIR_SET_REG = mask;
+  if (high)
+    TANGNANO20K_GPIO_OUT_SET_REG = mask;
+  else
+    TANGNANO20K_GPIO_OUT_CLR_REG = mask;
 }
 
-void analogWrite(pin_size_t pinNumber, int value)
+/* Starts (or updates) PWM on pin index `idx` at its stored frequency and
+ * the given 16-bit duty. Returns false if no channel was free, after
+ * falling back to plain on/off. */
+static bool startPwm(int idx, uint16_t duty)
 {
-  int idx = pwmIndex(pinNumber);
-  if (idx < 0)
-    return;
-
-  if (value < 0)
-    value = 0;
-  if (value > 255)
-    value = 255;
-  pinValue[idx] = (uint8_t)value;
+  uint32_t irqState = tangnano20k_irq_save();
+  pinDuty[idx] = duty;
 
   uint8_t ch = channelOf(idx);
   if (ch == NO_CHANNEL) {
@@ -108,13 +118,54 @@ void analogWrite(pin_size_t pinNumber, int value)
         break;
       }
     }
-    if (ch == NO_CHANNEL) {
-      writeDigitalFallback(idx, value >= 128);
-      return;
-    }
   }
 
-  programChannel(ch, idx);
+  if (ch == NO_CHANNEL)
+    writeDigitalFallback(idx, duty >= 32768);
+  else
+    programChannel(ch, idx);
+  tangnano20k_irq_restore(irqState);
+  return ch != NO_CHANNEL;
+}
+
+void analogWrite(pin_size_t pinNumber, int value)
+{
+  int idx = pwmIndex(pinNumber);
+  if (idx < 0)
+    return;
+
+  uint32_t maxValue = (1UL << writeResolution) - 1;
+  if (value < 0)
+    value = 0;
+  if ((uint32_t)value > maxValue)
+    value = (int)maxValue;
+  startPwm(idx, (uint16_t)(((uint32_t)value * 65535UL + maxValue / 2) / maxValue));
+}
+
+void analogWriteResolution(int bits)
+{
+  if (bits < 1)
+    bits = 1;
+  if (bits > 16)
+    bits = 16;
+  writeResolution = (uint8_t)bits;
+}
+
+void analogReadResolution(int bits)
+{
+  (void)bits; // No ADC - see analogRead() below.
+}
+
+bool tangnano20k_pwm_start(pin_size_t pin, uint32_t frequency, uint16_t duty)
+{
+  int idx = pwmIndex(pin);
+  if (idx < 0 || frequency == 0)
+    return false;
+  pinFrequency[idx] = frequency;
+  if (startPwm(idx, duty))
+    return true;
+  pinFrequency[idx] = 0;
+  return false;
 }
 
 void analogWriteFrequency(pin_size_t pin, uint32_t frequency)
@@ -122,10 +173,12 @@ void analogWriteFrequency(pin_size_t pin, uint32_t frequency)
   int idx = pwmIndex(pin);
   if (idx < 0)
     return;
+  uint32_t irqState = tangnano20k_irq_save();
   pinFrequency[idx] = frequency;
   uint8_t ch = channelOf(idx);
   if (ch != NO_CHANNEL)
     programChannel(ch, idx);
+  tangnano20k_irq_restore(irqState);
 }
 
 void tangnano20k_pwm_release(pin_size_t pin)
@@ -133,13 +186,14 @@ void tangnano20k_pwm_release(pin_size_t pin)
   int idx = pwmIndex(pin);
   if (idx < 0)
     return;
+  uint32_t irqState = tangnano20k_irq_save();
   uint8_t ch = channelOf(idx);
-  if (ch == NO_CHANNEL)
-    return;
-
-  TANGNANO20K_PWM_DUTY_REG(ch) = 0;
-  channelUsed[ch] = false;
-  setChannel(idx, NO_CHANNEL);
+  if (ch != NO_CHANNEL) {
+    TANGNANO20K_PWM_DUTY_REG(ch) = 0;
+    channelUsed[ch] = false;
+    setChannel(idx, NO_CHANNEL);
+  }
+  tangnano20k_irq_restore(irqState);
 }
 
 /* The Tang Nano 20K has no ADC wired to any pin - there is no way to

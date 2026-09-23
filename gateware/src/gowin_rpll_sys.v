@@ -54,7 +54,7 @@ rPLL rpll_inst (
 // (GW2AR-18C), not hand-derived, since the VCO (IDIV/FBDIV ratio) and
 // output (ODIV) must both land on values the PLL hardware actually
 // supports. Must be kept in step with sys_parameters.v's CLK_FREQ, which
-// top.v feeds to sdram_bus.v/ws2812b_tgt.v for their own FREQ-derived
+// top.v feeds to sdram_bus.v/ws2812_strip.v for their own FREQ-derived
 // timing - see build_bitstream.py.
 `ifndef PLL_IDIV_SEL
 `define PLL_IDIV_SEL 0

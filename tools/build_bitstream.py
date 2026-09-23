@@ -3,7 +3,7 @@
 a program into the gateware's SRAM initialization files and running the
 open-source FPGA flow (yosys -> nextpnr-himbaechel -> gowin_pack).
 
-Usage: build_bitstream.py <prog.elf> <objcopy> <build_dir> [ai_accel] [boot_flash] [spi_count] [i2c_count] [hw_muldiv] [i2s_rx] [clk_freq_hz] [pll_idiv] [pll_fbdiv] [pll_odiv] [pwm_audio] [flash_cache]
+Usage: build_bitstream.py <prog.elf> <objcopy> <build_dir> [ai_accel] [boot_flash] [spi_count] [i2c_count] [hw_muldiv] [i2s_rx] [clk_freq_hz] [pll_idiv] [pll_fbdiv] [pll_odiv] [pwm_audio] [flash_cache] [compressed] [barrel_shifter]
 
 ai_accel: "1" to synthesize the AI accelerator (gateware/src/ai_accel_bus.v
 and friends, integrated from NanoTangAI) into the bitstream, per the
@@ -77,7 +77,7 @@ clk_freq_hz/pll_idiv/pll_fbdiv/pll_odiv: driven together by the Tools >
 Clock Speed board menu (Normal 27MHz / Low Power 13.5MHz / Overclocked
 54MHz, default Normal). clk_freq_hz becomes gowin_rpll_sys.v's actual PLL
 output and sys_parameters.v's CLK_FREQ (which top.v feeds to
-sdram_bus.v/ws2812b_tgt.v for their own FREQ-derived timing); pll_idiv/
+sdram_bus.v/ws2812_strip.v for their own FREQ-derived timing); pll_idiv/
 pll_fbdiv/pll_odiv are the exact IDIV_SEL/FBDIV_SEL/ODIV_SEL divider values
 that produce it from the board's 27MHz oscillator - computed per option
 with apycula's gowin_pll calculator against this exact part (GW2AR-18C),
@@ -102,6 +102,14 @@ gateware/src/qspi_flash_cached.v (a 512-byte read cache in front of the
 onboard flash, ~1,700 LUT4s) instead of the plain qspi_flash.v; "0"
 (default) keeps the uncached reader. See docs/PERIPHERALS.md "Flash".
 Last on the command line for the same reason as pwm_audio.
+
+compressed: "1" for Tools > Compressed Instructions: Enabled - builds
+picorv32 with COMPRESSED_ISA (the RISC-V "C" extension). Must match
+platform.txt's -march (the "c" in rv32i[m]c_...), which boards.txt drives
+from the same menu choice.
+
+barrel_shifter: "1" for Tools > Barrel Shifter: Enabled - builds picorv32
+with BARREL_SHIFTER (single-cycle shifts). Gateware only.
 """
 import hashlib
 import shutil
@@ -133,8 +141,7 @@ GATEWARE_SOURCES = [
     "spi_master.v",
     "od_gpio2.v",
     "gpio_bank.v",
-    "ws2812b.v",
-    "ws2812b_tgt.v",
+    "ws2812_strip.v",
     "extirq.v",
     "dma_engine.v",
     "qspi_flash.v",
@@ -157,7 +164,8 @@ def run(cmd, **kwargs):
 
 
 def core_bitstream_cache_key(boot_image_path, ai_accel, spi_count, i2c_count, hw_muldiv, i2s_rx,
-                              clk_freq_hz, pll_idiv, pll_fbdiv, pll_odiv, pwm_audio, flash_cache):
+                              clk_freq_hz, pll_idiv, pll_fbdiv, pll_odiv, pwm_audio, flash_cache,
+                              compressed, barrel_shifter):
     """Hashes everything that can affect a Boot Mode: Flash core bitstream,
     independent of sketch content: the fixed core image (irq_vec.S/boot.S,
     the only trace of those build_bitstream.py otherwise never reads),
@@ -172,13 +180,14 @@ def core_bitstream_cache_key(boot_image_path, ai_accel, spi_count, i2c_count, hw
         f"ai_accel={int(ai_accel)},spi_count={spi_count},i2c_count={i2c_count},"
         f"hw_muldiv={int(hw_muldiv)},i2s_rx={int(i2s_rx)},clk_freq_hz={clk_freq_hz},"
         f"pll_idiv={pll_idiv},pll_fbdiv={pll_fbdiv},pll_odiv={pll_odiv},"
-        f"pwm_audio={int(pwm_audio)},flash_cache={int(flash_cache)}".encode()
+        f"pwm_audio={int(pwm_audio)},flash_cache={int(flash_cache)},"
+        f"compressed={int(compressed)},barrel_shifter={int(barrel_shifter)}".encode()
     )
     return h.hexdigest()
 
 
 def main():
-    if len(sys.argv) not in (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16):
+    if len(sys.argv) not in range(4, 19):
         sys.stderr.write(__doc__)
         return 1
 
@@ -199,6 +208,8 @@ def main():
     pll_odiv = int(sys.argv[13]) if len(sys.argv) >= 14 else 32
     pwm_audio = len(sys.argv) >= 15 and sys.argv[14] == "1"
     flash_cache = len(sys.argv) >= 16 and sys.argv[15] == "1"
+    compressed = len(sys.argv) >= 17 and sys.argv[16] == "1"
+    barrel_shifter = len(sys.argv) >= 18 and sys.argv[17] == "1"
     build_dir.mkdir(parents=True, exist_ok=True)
 
     # FLASH_DATA payload, independent of boot_flash - empty (0 bytes) if the
@@ -232,7 +243,8 @@ def main():
         ])
 
         cache_key = core_bitstream_cache_key(bin_path, ai_accel, spi_count, i2c_count, hw_muldiv, i2s_rx,
-                                              clk_freq_hz, pll_idiv, pll_fbdiv, pll_odiv, pwm_audio, flash_cache)
+                                              clk_freq_hz, pll_idiv, pll_fbdiv, pll_odiv, pwm_audio, flash_cache,
+                                              compressed, barrel_shifter)
         cached_fs = CACHE_DIR / f"{cache_key}.fs"
         fs_path = build_dir / "prog.fs"
         if cached_fs.exists():
@@ -284,6 +296,10 @@ def main():
         defines.append("-DWITH_PWM_AUDIO")
     if flash_cache:
         defines.append("-DWITH_FLASH_CACHE")
+    if compressed:
+        defines.append("-DWITH_COMPRESSED_ISA")
+    if barrel_shifter:
+        defines.append("-DWITH_BARREL_SHIFTER")
     # Clock Speed menu - always passed explicitly (rather than relying on
     # the Verilog `ifndef defaults) so the PLL dividers and CLK_FREQ can
     # never drift out of step with each other.

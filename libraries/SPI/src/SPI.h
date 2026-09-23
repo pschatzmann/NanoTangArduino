@@ -3,9 +3,10 @@
 #include <Arduino.h>
 #include "api/HardwareSPI.h"
 
-/* SPI master (see gateware/src/spi_master.v). Only mode 0, MSB-first is
- * supported in hardware; the requested SPIMode/BitOrder in SPISettings are
- * otherwise ignored. There is a single fixed CS line (asserted for the
+/* SPI master (see gateware/src/spi_master.v). All four SPI modes and
+ * both bit orders from SPISettings are supported in hardware; the clock
+ * is the fastest F_CPU/(2*n) that doesn't exceed the requested one (at
+ * most F_CPU/2). There is a single fixed CS line (asserted for the
  * duration of a transaction, i.e. between beginTransaction()/
  * endTransaction()) rather than a general-purpose CS pin - only one SPI
  * device can be wired up at a time per port.
@@ -19,8 +20,9 @@
 class TangNanoSPIClass : public arduino::HardwareSPI
 {
 public:
-  TangNanoSPIClass(volatile uint32_t &divReg, volatile uint32_t &csReg, volatile uint32_t &datReg)
-    : divReg_(divReg), csReg_(csReg), datReg_(datReg) {}
+  TangNanoSPIClass(volatile uint32_t &divReg, volatile uint32_t &csReg, volatile uint32_t &datReg,
+                   volatile uint32_t &cfgReg)
+    : divReg_(divReg), csReg_(csReg), datReg_(datReg), cfgReg_(cfgReg) {}
 
   uint8_t transfer(uint8_t data) override;
   uint16_t transfer16(uint16_t data) override;
@@ -41,6 +43,7 @@ private:
   volatile uint32_t &divReg_;
   volatile uint32_t &csReg_;
   volatile uint32_t &datReg_;
+  volatile uint32_t &cfgReg_;
 };
 
 extern TangNanoSPIClass SPI;

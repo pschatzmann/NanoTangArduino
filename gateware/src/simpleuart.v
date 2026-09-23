@@ -32,7 +32,13 @@ module simpleuart #(parameter integer DEFAULT_DIV = 1) (
 	input         reg_dat_re,
 	input  [31:0] reg_dat_di,
 	output [31:0] reg_dat_do,
-	output        reg_dat_wait
+	output        reg_dat_wait,
+	// Added for the Arduino core (uart_wrap.v): high while a byte is
+	// still being shifted out, so Serial.flush() can wait for the stop bit.
+	output        tx_busy,
+	// Also added: one-cycle pulse when a received byte overwrites one
+	// that was never read (the receive side lost data).
+	output reg    rx_lost
 );
 	reg [31:0] cfg_divider;
 
@@ -50,6 +56,7 @@ module simpleuart #(parameter integer DEFAULT_DIV = 1) (
 	assign reg_div_do = cfg_divider;
 
 	assign reg_dat_wait = reg_dat_we && (send_bitcnt || send_dummy);
+	assign tx_busy = (send_bitcnt != 0);
 	assign reg_dat_do = recv_buf_valid ? recv_buf_data : ~0;
 
 	always @(posedge clk) begin
@@ -70,8 +77,10 @@ module simpleuart #(parameter integer DEFAULT_DIV = 1) (
 			recv_pattern <= 0;
 			recv_buf_data <= 0;
 			recv_buf_valid <= 0;
+			rx_lost <= 0;
 		end else begin
 			recv_divcnt <= recv_divcnt + 1;
+			rx_lost <= 0;
 			if (reg_dat_re)
 				recv_buf_valid <= 0;
 			case (recv_state)
@@ -90,6 +99,7 @@ module simpleuart #(parameter integer DEFAULT_DIV = 1) (
 					if (recv_divcnt > cfg_divider) begin
 						recv_buf_data <= recv_pattern;
 						recv_buf_valid <= 1;
+						rx_lost <= recv_buf_valid && !reg_dat_re;
 						recv_state <= 0;
 					end
 				end

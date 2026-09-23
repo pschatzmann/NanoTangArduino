@@ -6,9 +6,22 @@
  * the board's second button, read-only; pin 10 (TANGNANO20K_PIN_SD_CS,
  * aka SS) is a virtual pin toggling the SPI peripheral's hardware chip
  * select, so the unmodified libraries/SD library's plain digitalWrite()
- * calls work (see pins_arduino.h); pins 14-35 (GPIO0-GPIO21) are real
+ * calls work (see pins_arduino.h); pins 14-34 (GPIO0-GPIO20) are real
  * general-purpose I/O on the expansion header, with real pinMode()
- * support unlike the pins above. */
+ * support unlike the pins above.
+ *
+ * All register updates are single writes to SET/CLR registers rather than
+ * read-modify-writes, so digitalWrite() from an interrupt handler (tone(),
+ * a TangTimer callback, ...) can't undo a concurrent one from loop().
+ *
+ * Every GPIO pin has a weak pull-up (fixed at synthesis - see
+ * gateware/picorv32_20k.cst), so INPUT and INPUT_PULLUP behave the same
+ * and INPUT_PULLDOWN isn't available. OUTPUT_OPENDRAIN is emulated on top
+ * of it: LOW drives the pin low, HIGH releases it (switches it to an
+ * input), letting the pull-up or another device set the level. */
+
+/* GPIO pins currently in OUTPUT_OPENDRAIN mode, one bit per GPIOn. */
+static volatile uint32_t openDrainPins;
 
 static inline bool isExpansionGpio(pin_size_t pinNumber)
 {
@@ -22,11 +35,19 @@ void pinMode(pin_size_t pinNumber, PinMode mode)
 
   if (isExpansionGpio(pinNumber)) {
     uint32_t mask = 1UL << (pinNumber - TANGNANO20K_PIN_GPIO_BASE);
-    bool asOutput = (mode == OUTPUT || mode == OUTPUT_OPENDRAIN);
-    if (asOutput)
-      TANGNANO20K_GPIO_DIR_REG = TANGNANO20K_GPIO_DIR_REG | mask;
+    if (mode == OUTPUT_OPENDRAIN) {
+      // Starts released (HIGH); the output latch stays 0 so that
+      // digitalWrite(LOW) only has to switch the direction.
+      TANGNANO20K_GPIO_DIR_CLR_REG = mask;
+      TANGNANO20K_GPIO_OUT_CLR_REG = mask;
+      openDrainPins |= mask;
+      return;
+    }
+    openDrainPins &= ~mask;
+    if (mode == OUTPUT)
+      TANGNANO20K_GPIO_DIR_SET_REG = mask;
     else
-      TANGNANO20K_GPIO_DIR_REG = TANGNANO20K_GPIO_DIR_REG & ~mask;
+      TANGNANO20K_GPIO_DIR_CLR_REG = mask;
     return;
   }
 
@@ -44,10 +65,16 @@ void digitalWrite(pin_size_t pinNumber, PinStatus status)
 
   if (isExpansionGpio(pinNumber)) {
     uint32_t mask = 1UL << (pinNumber - TANGNANO20K_PIN_GPIO_BASE);
-    if (status == HIGH)
-      TANGNANO20K_GPIO_OUT_REG = TANGNANO20K_GPIO_OUT_REG | mask;
-    else
-      TANGNANO20K_GPIO_OUT_REG = TANGNANO20K_GPIO_OUT_REG & ~mask;
+    if (openDrainPins & mask) {
+      if (status == HIGH)
+        TANGNANO20K_GPIO_DIR_CLR_REG = mask; // Release.
+      else
+        TANGNANO20K_GPIO_DIR_SET_REG = mask; // Drive the latched 0.
+    } else if (status == HIGH) {
+      TANGNANO20K_GPIO_OUT_SET_REG = mask;
+    } else {
+      TANGNANO20K_GPIO_OUT_CLR_REG = mask;
+    }
     return;
   }
 
@@ -62,9 +89,9 @@ void digitalWrite(pin_size_t pinNumber, PinStatus status)
 
   uint32_t mask = 1UL << pinNumber;
   if (status == HIGH)
-    TANGNANO20K_LED_REG = TANGNANO20K_LED_REG | mask;
+    TANGNANO20K_LED_SET_REG = mask;
   else
-    TANGNANO20K_LED_REG = TANGNANO20K_LED_REG & ~mask;
+    TANGNANO20K_LED_CLR_REG = mask;
 }
 
 PinStatus digitalRead(pin_size_t pinNumber)

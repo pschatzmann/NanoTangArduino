@@ -65,7 +65,7 @@ bool SoftwareSerial::overflow(void)
 
 size_t SoftwareSerial::write(uint8_t byte)
 {
-  noInterrupts();
+  uint32_t irqState = tangnano20k_irq_save();
 
   uint32_t next = TANGNANO20K_SYSTICK_REG;
 
@@ -87,7 +87,7 @@ size_t SoftwareSerial::write(uint8_t byte)
   next += bitTicks_;
   waitUntilTick(next);
 
-  interrupts();
+  tangnano20k_irq_restore(irqState);
   return 1;
 }
 
@@ -101,11 +101,11 @@ int SoftwareSerial::read(void)
   if (rxCount_ == 0)
     return -1;
 
-  noInterrupts();
+  uint32_t irqState = tangnano20k_irq_save();
   uint8_t b = rxBuffer_[rxTail_];
   rxTail_ = (uint8_t)((rxTail_ + 1) % RX_BUFFER_SIZE);
   rxCount_--;
-  interrupts();
+  tangnano20k_irq_restore(irqState);
   return b;
 }
 

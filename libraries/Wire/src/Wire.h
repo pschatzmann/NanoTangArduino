@@ -13,7 +13,13 @@
  * and present by default but removable (Tools > I2C Buses: None) to save
  * LUTs. `Wire2` (libraries/Wire's second global instance, only present
  * when Tools > I2C Buses: Two is selected) uses GPIO4/GPIO5 instead - see
- * docs/PERIPHERALS.md. */
+ * docs/PERIPHERALS.md.
+ *
+ * A slave holding SCL low (clock stretching) is waited for, but only up
+ * to the timeout (25ms by default, AVR's setWireTimeout() API): after
+ * that the transfer is abandoned, both lines released, the timeout flag
+ * set, and endTransmission() returns 5 / requestFrom() 0 - so a missing
+ * pull-up or a stuck device can't hang the sketch. */
 class TwoWire : public arduino::HardwareI2C
 {
 public:
@@ -34,6 +40,12 @@ public:
 
   void onReceive(void (*)(int)) override {}
   void onRequest(void (*)(void)) override {}
+
+  // timeout_us == 0 waits forever. reset_with_timeout is accepted for
+  // AVR compatibility; the bus is always released after a timeout.
+  void setWireTimeout(uint32_t timeout_us = 25000, bool reset_with_timeout = false);
+  bool getWireTimeoutFlag(void) const { return timeoutFlag_; }
+  void clearWireTimeoutFlag(void) { timeoutFlag_ = false; }
 
   int available(void) override;
   int peek(void) override;
@@ -57,6 +69,7 @@ private:
   void sclRelease(void);
   bool sdaRead(void);
   void halfPeriodDelay(void);
+  bool abandonIfTimedOut(void);
 
   uint8_t txBuffer[kBufferSize];
   size_t txLength = 0;
@@ -66,7 +79,10 @@ private:
   size_t rxLength = 0;
   size_t rxIndex = 0;
 
-  unsigned int halfPeriodUs = 5; // ~100kHz default
+  uint32_t halfPeriodCycles = F_CPU / 200000UL; // ~100kHz default
+  uint32_t timeoutUs_ = 25000;
+  bool aborted_ = false;     // Current transfer hit the timeout.
+  bool timeoutFlag_ = false; // Sticky, for getWireTimeoutFlag().
 };
 
 extern TwoWire Wire;

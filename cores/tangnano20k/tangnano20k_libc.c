@@ -4,6 +4,7 @@
  * ordinary libc string/ctype/stdlib functions. */
 
 #include <stddef.h>
+#include <stdint.h>
 
 /* Not <ctype.h>: this toolchain's version defines isspace/tolower/toupper
  * as macros in C mode, which would conflict with defining them as real
@@ -21,36 +22,97 @@ size_t strlen(const char *s)
   return (size_t)(p - s);
 }
 
-void *memcpy(void *dst, const void *src, size_t n)
+/* memcpy()/memset()/memmove() move whole 32-bit words when source and
+ * destination share the same alignment, ~4x fewer bus transactions than
+ * byte loops (it matters most on the SDRAM heap). NO_LIBCALL stops GCC
+ * from recognizing these loops as memcpy()/memset() and turning them
+ * back into calls to themselves. */
+#define NO_LIBCALL __attribute__((optimize("no-tree-loop-distribute-patterns")))
+#define WORD_ALIGNED(p) (((uintptr_t)(p) & 3U) == 0)
+
+NO_LIBCALL void *memcpy(void *dst, const void *src, size_t n)
 {
   unsigned char *d = (unsigned char *)dst;
   const unsigned char *s = (const unsigned char *)src;
+
+  if ((((uintptr_t)d ^ (uintptr_t)s) & 3U) == 0) {
+    while (n && !WORD_ALIGNED(d)) {
+      *d++ = *s++;
+      n--;
+    }
+    uint32_t *dw = (uint32_t *)d;
+    const uint32_t *sw = (const uint32_t *)s;
+    for (; n >= 16; n -= 16) {
+      dw[0] = sw[0];
+      dw[1] = sw[1];
+      dw[2] = sw[2];
+      dw[3] = sw[3];
+      dw += 4;
+      sw += 4;
+    }
+    for (; n >= 4; n -= 4)
+      *dw++ = *sw++;
+    d = (unsigned char *)dw;
+    s = (const unsigned char *)sw;
+  }
+
   while (n--)
     *d++ = *s++;
   return dst;
 }
 
-void *memset(void *dst, int c, size_t n)
+NO_LIBCALL void *memset(void *dst, int c, size_t n)
 {
   unsigned char *d = (unsigned char *)dst;
+  unsigned char b = (unsigned char)c;
+
+  while (n && !WORD_ALIGNED(d)) {
+    *d++ = b;
+    n--;
+  }
+  uint32_t pattern = b * 0x01010101UL;
+  uint32_t *dw = (uint32_t *)d;
+  for (; n >= 16; n -= 16) {
+    dw[0] = pattern;
+    dw[1] = pattern;
+    dw[2] = pattern;
+    dw[3] = pattern;
+    dw += 4;
+  }
+  for (; n >= 4; n -= 4)
+    *dw++ = pattern;
+  d = (unsigned char *)dw;
+
   while (n--)
-    *d++ = (unsigned char)c;
+    *d++ = b;
   return dst;
 }
 
-void *memmove(void *dst, const void *src, size_t n)
+NO_LIBCALL void *memmove(void *dst, const void *src, size_t n)
 {
   unsigned char *d = (unsigned char *)dst;
   const unsigned char *s = (const unsigned char *)src;
-  if (d < s) {
-    while (n--)
-      *d++ = *s++;
-  } else {
-    d += n;
-    s += n;
-    while (n--)
+
+  // Copying forwards is safe unless dst starts inside [src, src+n).
+  if (d <= s || d >= s + n)
+    return memcpy(dst, src, n);
+
+  d += n;
+  s += n;
+  if ((((uintptr_t)d ^ (uintptr_t)s) & 3U) == 0) {
+    while (n && !WORD_ALIGNED(d)) {
       *--d = *--s;
+      n--;
+    }
+    uint32_t *dw = (uint32_t *)d;
+    const uint32_t *sw = (const uint32_t *)s;
+    for (; n >= 4; n -= 4)
+      *--dw = *--sw;
+    d = (unsigned char *)dw;
+    s = (const unsigned char *)sw;
   }
+  while (n--)
+    *--d = *--s;
   return dst;
 }
 
@@ -206,6 +268,142 @@ long atol(const char *s)
     result = result * 10 + (*s++ - '0');
 
   return sign * result;
+}
+
+int atoi(const char *s)
+{
+  return (int)atol(s);
+}
+
+/* strtol()/strtoul(): base 0 (auto-detect 0x/0 prefixes) or 2-36. No
+ * errno on this libc-less core - out-of-range values saturate to
+ * LONG_MIN/LONG_MAX/ULONG_MAX as the standard specifies. */
+static unsigned long parse_unsigned(const char *s, char **endptr, int base, int *negative, int *overflow)
+{
+  const char *start = s;
+  while (isspace((unsigned char)*s))
+    s++;
+
+  *negative = 0;
+  if (*s == '-') {
+    *negative = 1;
+    s++;
+  } else if (*s == '+') {
+    s++;
+  }
+
+  if ((base == 0 || base == 16) && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+    s += 2;
+    base = 16;
+  } else if (base == 0) {
+    base = (s[0] == '0') ? 8 : 10;
+  }
+
+  unsigned long result = 0;
+  int any = 0;
+  *overflow = 0;
+  for (;; s++) {
+    int digit;
+    if (*s >= '0' && *s <= '9')
+      digit = *s - '0';
+    else if (*s >= 'a' && *s <= 'z')
+      digit = *s - 'a' + 10;
+    else if (*s >= 'A' && *s <= 'Z')
+      digit = *s - 'A' + 10;
+    else
+      break;
+    if (digit >= base)
+      break;
+    any = 1;
+    if (result > (~0UL - (unsigned long)digit) / (unsigned long)base)
+      *overflow = 1;
+    else
+      result = result * (unsigned long)base + (unsigned long)digit;
+  }
+
+  if (endptr)
+    *endptr = (char *)(any ? s : start);
+  return result;
+}
+
+long strtol(const char *s, char **endptr, int base)
+{
+  int negative, overflow;
+  unsigned long mag = parse_unsigned(s, endptr, base, &negative, &overflow);
+  if (negative) {
+    if (overflow || mag > 0x80000000UL)
+      return (long)0x80000000UL;
+    return (long)(0UL - mag);
+  }
+  if (overflow || mag > 0x7FFFFFFFUL)
+    return 0x7FFFFFFFL;
+  return (long)mag;
+}
+
+unsigned long strtoul(const char *s, char **endptr, int base)
+{
+  int negative, overflow;
+  unsigned long mag = parse_unsigned(s, endptr, base, &negative, &overflow);
+  if (overflow)
+    return ~0UL;
+  return negative ? 0UL - mag : mag;
+}
+
+int abs(int v)
+{
+  return v < 0 ? -v : v;
+}
+
+long labs(long v)
+{
+  return v < 0 ? -v : v;
+}
+
+char *strcat(char *dst, const char *src)
+{
+  strcpy(dst + strlen(dst), src);
+  return dst;
+}
+
+char *strncat(char *dst, const char *src, size_t n)
+{
+  char *d = dst + strlen(dst);
+  while (n-- && *src)
+    *d++ = *src++;
+  *d = '\0';
+  return dst;
+}
+
+void *memchr(const void *s, int c, size_t n)
+{
+  const unsigned char *p = (const unsigned char *)s;
+  while (n--) {
+    if (*p == (unsigned char)c)
+      return (void *)p;
+    p++;
+  }
+  return NULL;
+}
+
+int strcasecmp(const char *a, const char *b)
+{
+  while (*a && tolower((unsigned char)*a) == tolower((unsigned char)*b)) {
+    a++;
+    b++;
+  }
+  return tolower((unsigned char)*a) - tolower((unsigned char)*b);
+}
+
+int strncasecmp(const char *a, const char *b, size_t n)
+{
+  while (n && *a && tolower((unsigned char)*a) == tolower((unsigned char)*b)) {
+    a++;
+    b++;
+    n--;
+  }
+  if (n == 0)
+    return 0;
+  return tolower((unsigned char)*a) - tolower((unsigned char)*b);
 }
 
 static char *tangnano20k_utoa(unsigned long value, char *str, int base)

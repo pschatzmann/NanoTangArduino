@@ -19,11 +19,12 @@ sketch.ino ──arduino-cli/IDE──> RISC-V ELF (cores/tangnano20k + api/)
 - `gateware/` — the PicoRV32-based SoC (forked from
   [grughuhler/picorv32_tang_nano_20k](https://github.com/grughuhler/picorv32_tang_nano_20k)),
   extended with: a free-running `systick` peripheral (`millis()`/
-  `micros()`), `i2s` (MAX98357A audio, plus an optional receive path for
+  `micros()` counters that wrap at the full 2^32, like on AVR), RX/TX
+  FIFOs in front of the UART, `i2s` (MAX98357A audio, plus an optional receive path for
   an external I2S microphone), `pwm_bank` (`analogWrite()`/`analogWriteFrequency()` on the
   LEDs and GPIO pins), `spi_master` and `od_gpio2` (bit-banged I2C), `gpio_bank`
-  (general-purpose expansion-header GPIO), `ws2812b`/`ws2812b_tgt` (the
-  onboard addressable RGB LED), `extirq` (pin-change source for
+  (general-purpose expansion-header GPIO), `ws2812_strip` (the
+  onboard addressable RGB LED and external WS2812 strips), `extirq` (pin-change source for
   `attachInterrupt()` — see [Interrupts](PERIPHERALS.md#interrupts)),
   `dma_engine` (the SoC's second bus master, see
   [DMA](PERIPHERALS.md#dma)),
@@ -103,9 +104,13 @@ Also set when the corresponding `Tools >` menu option is enabled (see
 |------------------------------|---------------------------------------------------|
 | `0x0000_0000`                | Internal SRAM (64KB: program + data + stack)       |
 | `0x8000_0000`                | LEDs, bits `[5:0]`, read/write                     |
+| `0x8000_0004`                | UART status: RX FIFO count, TX FIFO free, TX idle, RX overflow (read) |
 | `0x8000_0008`                | UART clock divisor register                        |
-| `0x8000_000C`                | UART data register                                 |
-| `0x8000_0020`                | `systick` free-running 32-bit up-counter           |
+| `0x8000_000C`                | UART data register (64-byte RX / 32-byte TX FIFOs) |
+| `0x8000_0010`-`0x8000_0018`  | LED SET/CLR/TOGGLE (write 1 bits to act)           |
+| `0x8000_0020`                | `systick` free-running 32-bit cycle counter        |
+| `0x8000_0024`                | `systick` microsecond counter (`micros()`)         |
+| `0x8000_0028`                | `systick` millisecond counter (`millis()`)         |
 | `0x8000_0040`                | I2S BCLK phase increment register (write)          |
 | `0x8000_0044`                | I2S transmit data register: `{left16,right16}` (write) |
 | `0x8000_0048`                | I2S control register: bit0 = PA_EN (write)         |
@@ -119,10 +124,13 @@ Also set when the corresponding `Tools >` menu option is enabled (see
 | `0x8000_00A4`                | SPI2 CS register: bit0 = asserted (write) - Tools > SPI Buses: Two only |
 | `0x8000_00A8`                | SPI2 data register (read/write) - Tools > SPI Buses: Two only |
 | `0x8000_00B0`                | I2C2 open-drain SDA/SCL - Tools > I2C Buses: Two only |
+| `0x8000_00C0`-`0x8000_00C8`  | GPIO OUT SET/CLR/TOGGLE (write 1 bits to act)      |
+| `0x8000_00D0`-`0x8000_00D4`  | GPIO DIR SET/CLR (write 1 bits to act)             |
 | `0x8000_0100`                | GPIO direction register (bits [20:0], 1=output)    |
 | `0x8000_0104`                | GPIO output register (bits [20:0])                 |
 | `0x8000_0108`                | GPIO input register (bits [20:0], read-only)       |
-| `0x8000_0110`                | WS2812 LED: write `{G[7:0],R[7:0],B[7:0]}` (write, blocks until accepted) |
+| `0x8000_0110`                | WS2812: write queues a `{G[7:0],R[7:0],B[7:0]}` pixel; read bit0 = busy |
+| `0x8000_0114`                | WS2812 config: route output to a GPIO pin         |
 | `0x8000_0120`                | External-interrupt ENABLE register (bits [21:0], see [Peripherals](PERIPHERALS.md#interrupts)) |
 | `0x8000_0124`                | External-interrupt STATUS register (read-clears)   |
 | `0x8000_0128`                | External-interrupt LEVEL register (read-only)      |

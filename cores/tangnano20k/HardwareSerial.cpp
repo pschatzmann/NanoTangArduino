@@ -5,7 +5,13 @@ namespace tangnano20k {
 
 void HardwareSerial::begin(unsigned long baudrate)
 {
-  TANGNANO20K_UART_DIV_REG = TANGNANO20K_CLK_FREQ / baudrate;
+  /* simpleuart's bit period is (divisor + 2) clock cycles, so round the
+   * ideal cycles-per-bit and subtract 2 - plain F_CPU/baud runs ~5% slow
+   * at 921600 baud and 27MHz, beyond what a receiver tolerates. */
+  if (baudrate == 0)
+    return;
+  uint32_t cycles = (TANGNANO20K_CLK_FREQ + baudrate / 2) / baudrate;
+  TANGNANO20K_UART_DIV_REG = (cycles > 2) ? cycles - 2 : 0;
 }
 
 void HardwareSerial::begin(unsigned long baudrate, uint16_t /*config*/)
@@ -30,10 +36,32 @@ void HardwareSerial::refillRxCache(void)
   }
 }
 
+/* Every STATUS read clears the hardware's sticky overflow bit, so it's
+ * latched here for overflow() whichever call happened to read it. */
+uint32_t HardwareSerial::readStatus(void)
+{
+  uint32_t status = TANGNANO20K_UART_STATUS_REG;
+  if (status & TANGNANO20K_UART_STATUS_RX_OVERFLOW)
+    rxOverflow = true;
+  return status;
+}
+
 int HardwareSerial::available(void)
 {
-  refillRxCache();
-  return rxHasByte ? 1 : 0;
+  return (rxHasByte ? 1 : 0) + (int)TANGNANO20K_UART_STATUS_RX_COUNT(readStatus());
+}
+
+int HardwareSerial::availableForWrite(void)
+{
+  return (int)TANGNANO20K_UART_STATUS_TX_FREE(readStatus());
+}
+
+bool HardwareSerial::overflow(void)
+{
+  readStatus();
+  bool result = rxOverflow;
+  rxOverflow = false;
+  return result;
 }
 
 int HardwareSerial::peek(void)
@@ -54,9 +82,9 @@ int HardwareSerial::read(void)
 
 void HardwareSerial::flush(void)
 {
-  /* Writes stall the CPU in hardware until the UART is ready for the next
-   * byte (see gateware/src/uart_wrap.v), so there is no software buffer to
-   * drain here. */
+  // Waits until the TX FIFO has drained and the last stop bit is out.
+  while (!(readStatus() & TANGNANO20K_UART_STATUS_TX_IDLE)) {
+  }
 }
 
 size_t HardwareSerial::write(uint8_t c)
@@ -67,5 +95,22 @@ size_t HardwareSerial::write(uint8_t c)
 
 } // namespace tangnano20k
 
-static tangnano20k::HardwareSerial tangnano20kSerial;
-arduino::HardwareSerial &Serial = tangnano20kSerial;
+tangnano20k::HardwareSerial Serial;
+
+/* printf()/puts() (tangnano20k_printf.c) write through this, so stdout
+ * goes to Serial like on the ESP32/RP2040 cores. */
+extern "C" int putchar(int c)
+{
+  Serial.write((uint8_t)c);
+  return (unsigned char)c;
+}
+
+/* Called by main() after every loop(): runs the sketch's serialEvent(),
+ * if it defines one, while received bytes are waiting. */
+void serialEvent(void) __attribute__((weak));
+
+void serialEventRun(void)
+{
+  if (serialEvent && Serial.available())
+    serialEvent();
+}

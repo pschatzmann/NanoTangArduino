@@ -16,9 +16,21 @@
 #define TANGNANO20K_CLK_FREQ F_CPU
 
 #define TANGNANO20K_LED_REG      (*(volatile uint32_t *)0x80000000UL)
+/* Single-write bit operations on LED_REG (1 bits act, 0 bits untouched) -
+ * safe against a concurrent interrupt handler, unlike a read-modify-write
+ * of LED_REG itself. See gateware/src/tang_leds.v. */
+#define TANGNANO20K_LED_SET_REG    (*(volatile uint32_t *)0x80000010UL)
+#define TANGNANO20K_LED_CLR_REG    (*(volatile uint32_t *)0x80000014UL)
+#define TANGNANO20K_LED_TOGGLE_REG (*(volatile uint32_t *)0x80000018UL)
+/* UART STATUS (gateware/src/uart_wrap.v's RX/TX FIFOs), read-only. */
+#define TANGNANO20K_UART_STATUS_REG (*(volatile uint32_t *)0x80000004UL)
 #define TANGNANO20K_UART_DIV_REG (*(volatile uint32_t *)0x80000008UL)
 #define TANGNANO20K_UART_DAT_REG (*(volatile uint32_t *)0x8000000CUL)
 #define TANGNANO20K_SYSTICK_REG  (*(volatile uint32_t *)0x80000020UL)
+/* gateware/src/systick.v: hardware-prescaled counters that wrap at the
+ * full 2^32 (~71 min / ~49 days) - see wiring_time.cpp. */
+#define TANGNANO20K_MICROS_REG   (*(volatile uint32_t *)0x80000024UL)
+#define TANGNANO20K_MILLIS_REG   (*(volatile uint32_t *)0x80000028UL)
 #define TANGNANO20K_I2S_DIV_REG    (*(volatile uint32_t *)0x80000040UL)
 #define TANGNANO20K_I2S_DAT_REG    (*(volatile uint32_t *)0x80000044UL)
 #define TANGNANO20K_I2S_CTRL_REG   (*(volatile uint32_t *)0x80000048UL)
@@ -40,6 +52,9 @@
 #define TANGNANO20K_SPI_DIV_REG  (*(volatile uint32_t *)0x80000080UL)
 #define TANGNANO20K_SPI_CS_REG   (*(volatile uint32_t *)0x80000084UL)
 #define TANGNANO20K_SPI_DAT_REG  (*(volatile uint32_t *)0x80000088UL)
+/* bit0 CPHA, bit1 CPOL (so SPI_MODE0-3 map directly), bit2 LSB first -
+ * see gateware/src/spi_master.v. */
+#define TANGNANO20K_SPI_CFG_REG  (*(volatile uint32_t *)0x8000008CUL)
 #define TANGNANO20K_I2C_REG      (*(volatile uint32_t *)0x80000090UL)
 
 /* Second SPI/I2C port (Tools > SPI Buses / I2C Buses: Two, not the
@@ -48,11 +63,27 @@
 #define TANGNANO20K_SPI2_DIV_REG (*(volatile uint32_t *)0x800000A0UL)
 #define TANGNANO20K_SPI2_CS_REG  (*(volatile uint32_t *)0x800000A4UL)
 #define TANGNANO20K_SPI2_DAT_REG (*(volatile uint32_t *)0x800000A8UL)
+#define TANGNANO20K_SPI2_CFG_REG (*(volatile uint32_t *)0x800000ACUL)
 #define TANGNANO20K_I2C2_REG     (*(volatile uint32_t *)0x800000B0UL)
 #define TANGNANO20K_GPIO_DIR_REG (*(volatile uint32_t *)0x80000100UL)
 #define TANGNANO20K_GPIO_OUT_REG (*(volatile uint32_t *)0x80000104UL)
 #define TANGNANO20K_GPIO_IN_REG  (*(volatile uint32_t *)0x80000108UL)
-#define TANGNANO20K_WS2812_REG   (*(volatile uint32_t *)0x80000110UL)
+/* Same single-write bit operations for GPIO OUT/DIR - see
+ * gateware/src/gpio_bank.v. */
+#define TANGNANO20K_GPIO_OUT_SET_REG    (*(volatile uint32_t *)0x800000C0UL)
+#define TANGNANO20K_GPIO_OUT_CLR_REG    (*(volatile uint32_t *)0x800000C4UL)
+#define TANGNANO20K_GPIO_OUT_TOGGLE_REG (*(volatile uint32_t *)0x800000C8UL)
+#define TANGNANO20K_GPIO_DIR_SET_REG    (*(volatile uint32_t *)0x800000D0UL)
+#define TANGNANO20K_GPIO_DIR_CLR_REG    (*(volatile uint32_t *)0x800000D4UL)
+/* gateware/src/ws2812_strip.v: write queues a {G,R,B} pixel, read bit0 =
+ * busy (frame still sending or latching). CFG routes the output to a
+ * GPIO pin (see libraries/WS2812). */
+#define TANGNANO20K_WS2812_REG     (*(volatile uint32_t *)0x80000110UL)
+#define TANGNANO20K_WS2812_CFG_REG (*(volatile uint32_t *)0x80000114UL)
+#define TANGNANO20K_WS2812_BUSY            (1UL << 0)
+#define TANGNANO20K_WS2812_CFG_GPIO(n)     ((uint32_t)(n) & 0x1FUL)
+#define TANGNANO20K_WS2812_CFG_GPIO_EN     (1UL << 5)
+#define TANGNANO20K_WS2812_CFG_ONBOARD_OFF (1UL << 6)
 
 #define TANGNANO20K_AI_CFG_REG         (*(volatile uint32_t *)0x80000140UL)
 #define TANGNANO20K_AI_WEIGHT_SEL_REG  (*(volatile uint32_t *)0x80000144UL)
@@ -148,7 +179,12 @@
 /* PWM audio CTRL register: read bits. */
 #define TANGNANO20K_PWM_AUDIO_STATUS_FREE(status) ((status) & 0x1FUL)
 #define TANGNANO20K_PWM_AUDIO_STATUS_PRESENT      (1UL << 31)
+#define TANGNANO20K_UART_STATUS_RX_COUNT(status) ((status) & 0x7FUL)
+#define TANGNANO20K_UART_STATUS_TX_FREE(status)  (((status) >> 8) & 0x7FUL)
+#define TANGNANO20K_UART_STATUS_TX_IDLE          (1UL << 16)
+#define TANGNANO20K_UART_STATUS_RX_OVERFLOW      (1UL << 17) // sticky, read-clears
 #define TANGNANO20K_SPI_CS_ASSERT  (1UL << 0)
+#define TANGNANO20K_SPI_CFG_LSB_FIRST (1UL << 2)
 #define TANGNANO20K_I2C_SDA_LOW    (1UL << 0)
 #define TANGNANO20K_I2C_SCL_LOW    (1UL << 1)
 

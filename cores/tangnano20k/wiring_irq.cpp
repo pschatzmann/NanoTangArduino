@@ -18,7 +18,6 @@
  * deadline - see tangnano20k_timer.h.
  */
 
-extern "C" uint32_t tangnano20k_set_irq_mask(uint32_t mask);
 extern "C" void tangnano20k_set_timer(uint32_t ticks);
 
 void interrupts(void)
@@ -61,14 +60,14 @@ void attachInterrupt(pin_size_t interruptNumber, voidFuncPtr callback, PinStatus
   if (bit < 0)
     return;
 
-  noInterrupts();
+  uint32_t irqState = tangnano20k_irq_save();
   extIrqSlots[bit].active = true;
   extIrqSlots[bit].hasParam = false;
   extIrqSlots[bit].mode = mode;
   extIrqSlots[bit].callback.plain = callback;
   TANGNANO20K_EXTIRQ_ENABLE_REG = TANGNANO20K_EXTIRQ_ENABLE_REG | (1UL << bit);
   (void)TANGNANO20K_EXTIRQ_STATUS_REG; // Discard any change latched before enabling.
-  interrupts();
+  tangnano20k_irq_restore(irqState);
 }
 
 void attachInterruptParam(pin_size_t interruptNumber, voidFuncPtrParam callback, PinStatus mode, void *param)
@@ -77,7 +76,7 @@ void attachInterruptParam(pin_size_t interruptNumber, voidFuncPtrParam callback,
   if (bit < 0)
     return;
 
-  noInterrupts();
+  uint32_t irqState = tangnano20k_irq_save();
   extIrqSlots[bit].active = true;
   extIrqSlots[bit].hasParam = true;
   extIrqSlots[bit].mode = mode;
@@ -85,7 +84,7 @@ void attachInterruptParam(pin_size_t interruptNumber, voidFuncPtrParam callback,
   extIrqSlots[bit].param = param;
   TANGNANO20K_EXTIRQ_ENABLE_REG = TANGNANO20K_EXTIRQ_ENABLE_REG | (1UL << bit);
   (void)TANGNANO20K_EXTIRQ_STATUS_REG;
-  interrupts();
+  tangnano20k_irq_restore(irqState);
 }
 
 void detachInterrupt(pin_size_t interruptNumber)
@@ -94,10 +93,10 @@ void detachInterrupt(pin_size_t interruptNumber)
   if (bit < 0)
     return;
 
-  noInterrupts();
+  uint32_t irqState = tangnano20k_irq_save();
   extIrqSlots[bit].active = false;
   TANGNANO20K_EXTIRQ_ENABLE_REG = TANGNANO20K_EXTIRQ_ENABLE_REG & ~(1UL << bit);
-  interrupts();
+  tangnano20k_irq_restore(irqState);
 }
 
 /* --- Software timer engine (tone() + libraries/TangTimer) --------------- */
@@ -138,7 +137,7 @@ static void rearmHardwareTimer(void)
 
 int tangnano20k_sw_timer_alloc(void)
 {
-  noInterrupts();
+  uint32_t irqState = tangnano20k_irq_save();
   int handle = -1;
   for (int i = TANGNANO20K_SW_TIMER_TONE + 1; i < TANGNANO20K_SW_TIMER_COUNT; i++) {
     if (!swTimers[i].inUse) {
@@ -147,7 +146,7 @@ int tangnano20k_sw_timer_alloc(void)
       break;
     }
   }
-  interrupts();
+  tangnano20k_irq_restore(irqState);
   return handle;
 }
 
@@ -155,11 +154,11 @@ void tangnano20k_sw_timer_release(int handle)
 {
   if (handle < 0 || handle >= TANGNANO20K_SW_TIMER_COUNT)
     return;
-  noInterrupts();
+  uint32_t irqState = tangnano20k_irq_save();
   swTimers[handle].active = false;
   swTimers[handle].inUse = false;
   rearmHardwareTimer();
-  interrupts();
+  tangnano20k_irq_restore(irqState);
 }
 
 bool tangnano20k_sw_timer_start(int handle, void (*callback)(void), uint32_t interval_ticks, bool repeat)
@@ -167,14 +166,14 @@ bool tangnano20k_sw_timer_start(int handle, void (*callback)(void), uint32_t int
   if (handle < 0 || handle >= TANGNANO20K_SW_TIMER_COUNT || interval_ticks == 0)
     return false;
 
-  noInterrupts();
+  uint32_t irqState = tangnano20k_irq_save();
   swTimers[handle].callback = callback;
   swTimers[handle].interval_ticks = interval_ticks;
   swTimers[handle].deadline_ticks = TANGNANO20K_SYSTICK_REG + interval_ticks;
   swTimers[handle].repeat = repeat;
   swTimers[handle].active = true;
   rearmHardwareTimer();
-  interrupts();
+  tangnano20k_irq_restore(irqState);
   return true;
 }
 
@@ -182,16 +181,32 @@ void tangnano20k_sw_timer_stop(int handle)
 {
   if (handle < 0 || handle >= TANGNANO20K_SW_TIMER_COUNT)
     return;
-  noInterrupts();
+  uint32_t irqState = tangnano20k_irq_save();
   swTimers[handle].active = false;
   rearmHardwareTimer();
-  interrupts();
+  tangnano20k_irq_restore(irqState);
 }
 
 /* --- tone() / noTone() --------------------------------------------------- */
 
-static pin_size_t toneActivePin;
-static uint32_t toneRemainingHalfPeriods; // 0 == play until noTone().
+/* tone() plays from a PWM channel (tangnano20k_pwm_start(), see
+ * wiring_analog.cpp): a hardware 50% square wave with no CPU cost, the
+ * software timer only ending it after `duration`. Only when all PWM
+ * channels are busy does it fall back to toggling the pin from the
+ * timer interrupt, twice per cycle. As on AVR, one tone plays at a time:
+ * a new tone() replaces the current one. */
+
+#define NO_TONE_PIN 0xFF
+
+static pin_size_t toneActivePin = NO_TONE_PIN;
+static uint32_t toneRemainingHalfPeriods; // Fallback only; 0 == until noTone().
+
+static void toneEnd(void)
+{
+  if (toneActivePin != NO_TONE_PIN)
+    digitalWrite(toneActivePin, LOW); // Also releases the PWM channel.
+  toneActivePin = NO_TONE_PIN;
+}
 
 static void toneToggle(void)
 {
@@ -202,7 +217,7 @@ static void toneToggle(void)
   if (toneRemainingHalfPeriods > 0) {
     if (--toneRemainingHalfPeriods == 0) {
       tangnano20k_sw_timer_stop(TANGNANO20K_SW_TIMER_TONE);
-      digitalWrite(toneActivePin, LOW);
+      toneEnd();
     }
   }
 }
@@ -214,8 +229,23 @@ void tone(uint8_t pin, unsigned int frequency, unsigned long duration)
     return;
   }
 
-  pinMode(pin, OUTPUT);
+  tangnano20k_sw_timer_stop(TANGNANO20K_SW_TIMER_TONE);
+  if (toneActivePin != NO_TONE_PIN && toneActivePin != pin)
+    toneEnd();
   toneActivePin = pin;
+
+  if (tangnano20k_pwm_start(pin, frequency, 32768)) { // 50% duty
+    if (duration > 0) {
+      uint64_t ticks = (uint64_t)duration * (TANGNANO20K_CLK_FREQ / 1000UL);
+      if (ticks > 0x7FFFFFFFULL)
+        ticks = 0x7FFFFFFFULL; // The timer engine's limit (~79s at 27MHz).
+      tangnano20k_sw_timer_start(TANGNANO20K_SW_TIMER_TONE, toneEnd, (uint32_t)ticks, false);
+    }
+    return;
+  }
+
+  // Fallback: toggle the pin from the timer interrupt.
+  pinMode(pin, OUTPUT);
 
   // Toggling twice per cycle -> half-period interval.
   uint32_t halfPeriodTicks = TANGNANO20K_CLK_FREQ / (2UL * frequency);
@@ -231,6 +261,8 @@ void noTone(uint8_t pin)
 {
   tangnano20k_sw_timer_stop(TANGNANO20K_SW_TIMER_TONE);
   digitalWrite(pin, LOW);
+  if (pin == toneActivePin)
+    toneActivePin = NO_TONE_PIN;
 }
 
 /* --- Async DMA completion callback --------------------------------------- */

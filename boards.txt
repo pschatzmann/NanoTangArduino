@@ -11,6 +11,8 @@ menu.i2s_rx=I2S Input
 menu.pwm_audio=PWM Audio
 menu.flash_cache=Flash Cache
 menu.f_cpu=Clock Speed
+menu.compressed=Compressed Instructions
+menu.barrel_shifter=Barrel Shifter
 
 ## Sipeed Tang Nano 20K (PicoRV32 soft-SoC)
 ## ------------------------------------------
@@ -20,7 +22,8 @@ tangnano20k.build.core=tangnano20k
 tangnano20k.build.variant=tangnano20k
 tangnano20k.build.mcu=picorv32
 tangnano20k.build.board=TANGNANO20K
-tangnano20k.build.march=rv32i2p0
+tangnano20k.build.march_m=
+tangnano20k.build.march_c=
 tangnano20k.build.mabi=ilp32
 tangnano20k.build.sram_addr_width=14
 
@@ -136,11 +139,11 @@ tangnano20k.menu.i2c_buses.two.build.i2c_count=2
 # (confirmed via `riscv64-zephyr-elf-gcc -print-libgcc-file-name`) - see
 # platform.txt.
 tangnano20k.menu.hw_muldiv.disabled=Disabled (Recommended)
-tangnano20k.menu.hw_muldiv.disabled.build.march=rv32i2p0
+tangnano20k.menu.hw_muldiv.disabled.build.march_m=
 tangnano20k.menu.hw_muldiv.disabled.build.libgcc_path={compiler.path}../lib/gcc/riscv64-zephyr-elf/12.2.0/libgcc.a
 tangnano20k.menu.hw_muldiv.disabled.build.hw_muldiv=0
 tangnano20k.menu.hw_muldiv.enabled=Enabled
-tangnano20k.menu.hw_muldiv.enabled.build.march=rv32im_zicsr_zifencei
+tangnano20k.menu.hw_muldiv.enabled.build.march_m=m
 tangnano20k.menu.hw_muldiv.enabled.build.libgcc_path={compiler.path}../lib/gcc/riscv64-zephyr-elf/12.2.0/rv32im_zicsr_zifencei/ilp32/libgcc.a
 tangnano20k.menu.hw_muldiv.enabled.build.hw_muldiv=1
 
@@ -221,3 +224,31 @@ tangnano20k.menu.f_cpu.overclock.build.clk_freq_hz=54000000
 tangnano20k.menu.f_cpu.overclock.build.pll_idiv=0
 tangnano20k.menu.f_cpu.overclock.build.pll_fbdiv=1
 tangnano20k.menu.f_cpu.overclock.build.pll_odiv=16
+
+# Tools > Compressed Instructions. Disabled by default: like Hardware
+# Multiply/Divide, this changes the CPU's instruction set (picorv32's
+# COMPRESSED_ISA, the RISC-V "C" extension) and the compiler flag
+# (build.march_c -> -march=rv32i[m]c_...) together from this one choice.
+# Many instructions get a 16-bit encoding - about 18% smaller code on a
+# typical sketch (libgcc stays uncompressed, see below) - worth it when a
+# sketch is close to the 64KB SRAM limit. Costs
+# some LUTs, and fetching misaligned 32-bit instructions can cost an
+# extra cycle. libgcc stays the uncompressed build (the Zephyr SDK has no
+# RV32IC variant); a C-capable CPU runs it unchanged.
+tangnano20k.menu.compressed.disabled=Disabled (Recommended)
+tangnano20k.menu.compressed.disabled.build.march_c=
+tangnano20k.menu.compressed.disabled.build.compressed=0
+tangnano20k.menu.compressed.enabled=Enabled (smaller code)
+tangnano20k.menu.compressed.enabled.build.march_c=c
+tangnano20k.menu.compressed.enabled.build.compressed=1
+
+# Tools > Barrel Shifter. Gateware only (no compiler change): picorv32's
+# BARREL_SHIFTER makes every shift a single-cycle operation instead of
+# one cycle per bit position shifted. Shifts are everywhere - bit
+# manipulation, CRCs, fixed-point math and libgcc's software
+# floating-point routines - so this speeds up much more than it sounds.
+# Costs a few hundred LUTs.
+tangnano20k.menu.barrel_shifter.disabled=Disabled (Recommended)
+tangnano20k.menu.barrel_shifter.disabled.build.barrel_shifter=0
+tangnano20k.menu.barrel_shifter.enabled=Enabled (faster shifts)
+tangnano20k.menu.barrel_shifter.enabled.build.barrel_shifter=1

@@ -19,9 +19,29 @@ void TwoWire::sclRelease(void)
 {
   reg_ = reg_ & TANGNANO20K_I2C_SDA_LOW;
   /* Clock stretching: a slave may hold SCL low; wait for it to actually
-   * read back high before proceeding. */
+   * read back high before proceeding - up to the timeout. Once a transfer
+   * has timed out, later steps skip the wait so it unwinds quickly. */
+  if (aborted_)
+    return;
+  uint32_t start = micros();
   while (!(reg_ & TANGNANO20K_I2C_SCL_LOW)) {
+    if (timeoutUs_ != 0 && micros() - start >= timeoutUs_) {
+      aborted_ = true;
+      timeoutFlag_ = true;
+      return;
+    }
   }
+}
+
+/* Called at the end of a transfer: if it timed out, releases both lines
+ * and reports it. */
+bool TwoWire::abandonIfTimedOut(void)
+{
+  if (!aborted_)
+    return false;
+  reg_ = 0;
+  aborted_ = false;
+  return true;
 }
 
 bool TwoWire::sdaRead(void)
@@ -29,9 +49,15 @@ bool TwoWire::sdaRead(void)
   return (reg_ & TANGNANO20K_I2C_SDA_LOW) != 0;
 }
 
+/* Timed against the cycle counter rather than whole microseconds, so
+ * 400kHz (a 1.25us half period) is reachable. The bit-banging code
+ * around each delay adds some cycles, so the bus runs a little slower
+ * than requested, never faster. */
 void TwoWire::halfPeriodDelay(void)
 {
-  delayMicroseconds(halfPeriodUs);
+  uint32_t start = TANGNANO20K_SYSTICK_REG;
+  while ((uint32_t)(TANGNANO20K_SYSTICK_REG - start) < halfPeriodCycles) {
+  }
 }
 
 void TwoWire::i2cStart(void)
@@ -122,9 +148,13 @@ void TwoWire::setClock(uint32_t freq)
 {
   if (freq == 0)
     freq = 100000UL;
-  halfPeriodUs = (unsigned int)(1000000UL / (2UL * freq));
-  if (halfPeriodUs == 0)
-    halfPeriodUs = 1;
+  halfPeriodCycles = (F_CPU + 2UL * freq - 1) / (2UL * freq);
+}
+
+void TwoWire::setWireTimeout(uint32_t timeout_us, bool reset_with_timeout)
+{
+  (void)reset_with_timeout;
+  timeoutUs_ = timeout_us;
 }
 
 void TwoWire::beginTransmission(uint8_t address)
@@ -135,24 +165,24 @@ void TwoWire::beginTransmission(uint8_t address)
 
 uint8_t TwoWire::endTransmission(bool stopBit)
 {
+  uint8_t result = 0;
   i2cStart();
   if (!i2cWriteByte((uint8_t)(txAddress << 1))) {
-    if (stopBit)
-      i2cStop();
-    return 2; // NACK on address.
-  }
-
-  for (size_t i = 0; i < txLength; i++) {
-    if (!i2cWriteByte(txBuffer[i])) {
-      if (stopBit)
-        i2cStop();
-      return 3; // NACK on data.
+    result = 2; // NACK on address.
+  } else {
+    for (size_t i = 0; i < txLength; i++) {
+      if (!i2cWriteByte(txBuffer[i])) {
+        result = 3; // NACK on data.
+        break;
+      }
     }
   }
 
-  if (stopBit)
+  if (stopBit || result != 0)
     i2cStop();
-  return 0;
+  if (abandonIfTimedOut())
+    return 5; // Timeout (AVR Wire's code).
+  return result;
 }
 
 size_t TwoWire::requestFrom(uint8_t address, size_t len, bool stopBit)
@@ -160,11 +190,13 @@ size_t TwoWire::requestFrom(uint8_t address, size_t len, bool stopBit)
   if (len > kBufferSize)
     len = kBufferSize;
 
+  rxLength = 0;
+  rxIndex = 0;
+
   i2cStart();
   if (!i2cWriteByte((uint8_t)((address << 1) | 1))) {
     i2cStop();
-    rxLength = 0;
-    rxIndex = 0;
+    abandonIfTimedOut();
     return 0;
   }
 
@@ -173,9 +205,10 @@ size_t TwoWire::requestFrom(uint8_t address, size_t len, bool stopBit)
 
   if (stopBit)
     i2cStop();
+  if (abandonIfTimedOut())
+    return 0;
 
   rxLength = len;
-  rxIndex = 0;
   return len;
 }
 

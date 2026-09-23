@@ -2,8 +2,8 @@
 
 /* Pins 0-5 are the 6 onboard LEDs (support digitalWrite/digitalRead/
  * analogWrite). Pin 6 is the board's second button (KEY_S2), digitalRead
- * only. General GPIO header support is a future milestone - see docs/ROADMAP.md
- * roadmap. */
+ * only. Pins 10-13 are virtual SPI pins (see below), and pins 14-34 are
+ * the expansion header's general-purpose GPIO0-GPIO20. */
 
 #define LED_BUILTIN 0
 #define TANGNANO20K_PIN_KEY2 6
@@ -31,6 +31,10 @@ static const uint8_t SS = TANGNANO20K_PIN_SD_CS;
 static const uint8_t MOSI = 11;
 static const uint8_t MISO = 12;
 static const uint8_t SCK = 13;
+#define PIN_SPI_SS   SS
+#define PIN_SPI_MOSI MOSI
+#define PIN_SPI_MISO MISO
+#define PIN_SPI_SCK  SCK
 
 /* General GPIO: 21 of the J5/J6 expansion header's 34 free I/O pins (per
  * the official Tang Nano 20K Datasheet v1.3 pinout table), numbered
@@ -72,6 +76,13 @@ static const uint8_t GPIO20 = TANGNANO20K_PIN_GPIO_BASE + 20;
  * the 21 GPIO pins and BTN1 support it; digitalPinToInterrupt() on any
  * other pin is harmless (attachInterrupt() silently ignores it). */
 #define digitalPinToInterrupt(p) (p)
+
+/* Board-level counts and capability checks that portable libraries test
+ * for. Pin numbers run 0-34 (with 7-9 unused); there is no ADC. */
+#define NUM_DIGITAL_PINS  (TANGNANO20K_PIN_GPIO_BASE + 21)
+#define NUM_ANALOG_INPUTS 0
+#define digitalPinHasPWM(p) \
+  ((p) < 6 || ((p) >= TANGNANO20K_PIN_GPIO_BASE && (p) < NUM_DIGITAL_PINS))
 
 /* Compile-time lookups between a GPIOx constant and the physical FPGA pin
  * number printed in the official Tang Nano 20K Datasheet v1.3 pinout

@@ -77,14 +77,14 @@ void I2SClass::begin()
   }
   config_.ringSamples = ringCapacity_;
 
-  noInterrupts();
+  uint32_t irqState = tangnano20k_irq_save();
   txRingHead_ = 0;
   txRingTail_ = 0;
   txRingCount_ = 0;
   rxRingHead_ = 0;
   rxRingTail_ = 0;
   rxRingCount_ = 0;
-  interrupts();
+  tangnano20k_irq_restore(irqState);
 
   /* bclk = sampleRate * 32, toggling twice per period: phase increment
    * = 2 * bclk * 2^32 / CLK_FREQ (see gateware/src/i2s.v's div_sel). The
@@ -202,7 +202,7 @@ void I2SClass::txRingPush(uint32_t sample)
 {
   while (true)
   {
-    noInterrupts();
+    uint32_t irqState = tangnano20k_irq_save();
     bool hasRoom = (txRingCount_ < ringCapacity_);
     if (hasRoom)
     {
@@ -211,7 +211,7 @@ void I2SClass::txRingPush(uint32_t sample)
       txRingCount_++;
       TANGNANO20K_I2S_IRQEN_REG = TANGNANO20K_I2S_IRQEN_REG | TANGNANO20K_I2S_IRQEN_TX;
     }
-    interrupts();
+    tangnano20k_irq_restore(irqState);
     if (hasRoom)
       return;
     // Ring is full - spin until serviceIrq() (background IRQ) drains it.
@@ -228,7 +228,7 @@ void I2SClass::txRingPush(uint32_t sample)
  * full (serviceIrq() disables it in that case - see there for why). */
 bool I2SClass::rxRingPop(uint32_t *sample)
 {
-  noInterrupts();
+  uint32_t irqState = tangnano20k_irq_save();
   bool hasData = (rxRingCount_ > 0);
   bool wasFull = (rxRingCount_ == ringCapacity_);
   if (hasData)
@@ -237,13 +237,13 @@ bool I2SClass::rxRingPop(uint32_t *sample)
     rxRingTail_ = (uint16_t)((rxRingTail_ + 1) % ringCapacity_);
     rxRingCount_--;
   }
-  interrupts();
+  tangnano20k_irq_restore(irqState);
 
   if (hasData && wasFull)
   {
-    noInterrupts();
+    irqState = tangnano20k_irq_save();
     TANGNANO20K_I2S_IRQEN_REG = TANGNANO20K_I2S_IRQEN_REG | TANGNANO20K_I2S_IRQEN_RX;
-    interrupts();
+    tangnano20k_irq_restore(irqState);
   }
   return hasData;
 }

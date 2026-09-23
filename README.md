@@ -35,10 +35,15 @@ rather than a full FPGA rebuild - see
 - On-chip INT8 dot-product AI accelerator
 - `String`
 - `malloc`/`free`, backed by the board's embedded 8MB SDRAM
-- Interrupts (`attachInterrupt()`, `tone()`, a `TangTimer` callback-timer library)
+- Interrupts (`attachInterrupt()`, `tone()` from hardware PWM, a `TangTimer` callback-timer library)
+- `Servo`, on the hardware PWM channels
+- External WS2812 (NeoPixel) LED strips on any GPIO pin
+- `printf`/`snprintf`
 - `SoftwareSerial`, a bit-banged second serial port on any two GPIO pins
 - Hardware-accelerated bulk memory copy (`DMA`), including a background/async mode
 - Booting the sketch from the onboard SPI flash instead of internal SRAM (Tools > Boot Mode), and flash-mapped constant data (`FLASH_DATA`)
+- Compressed instructions (Tools > Compressed Instructions, ~18% smaller
+  code) and a single-cycle barrel shifter (Tools > Barrel Shifter)
 - Hardware multiply/divide (Tools > Hardware Multiply/Divide) - speeds up
   integer math and, indirectly, `float`/`double` math too (see
   [Known limitations](docs/KNOWN_LIMITATIONS.md) - there's no FPU, so

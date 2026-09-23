@@ -4,7 +4,7 @@
 # toolchain. Run after any change to gateware/src/*.v or cores/tangnano20k/.
 #
 # Usage:
-#   tools/run_tests.sh          # yosys hierarchy check + compile all examples
+#   tools/run_tests.sh          # yosys hierarchy check + tools/sim tests + compile all examples
 #   tools/run_tests.sh --full   # also run a full synth_gowin pass (slow,
 #                                # ~1-2 min; catches real synthesis issues
 #                                # like the BRAM-inference gap in docs/KNOWN_LIMITATIONS.md)
@@ -26,7 +26,7 @@ warn() { echo "  WARN: $1"; }
 fail() { echo "  FAIL: $1"; FAIL=1; }
 
 echo "== Gateware: yosys hierarchy check =="
-GW_SOURCES="picorv32.v sram8bit.v sram.v simpleuart.v uart_wrap.v reset.v systick.v tang_leds.v i2s.v pwm_bank.v pwm_audio.v spi_master.v od_gpio2.v gpio_bank.v ws2812b.v ws2812b_tgt.v extirq.v dma_engine.v qspi_flash.v qspi_flash_cached.v int8_mac_lane.v dot_product_lane_array.v byte_interleave_ram.v dot_product_engine.v ai_accel_bus.v sdram.v sdram_bus.v gowin_rpll_sys.v top.v"
+GW_SOURCES="picorv32.v sram8bit.v sram.v simpleuart.v uart_wrap.v reset.v systick.v tang_leds.v i2s.v pwm_bank.v pwm_audio.v spi_master.v od_gpio2.v gpio_bank.v ws2812_strip.v extirq.v dma_engine.v qspi_flash.v qspi_flash_cached.v int8_mac_lane.v dot_product_lane_array.v byte_interleave_ram.v dot_product_engine.v ai_accel_bus.v sdram.v sdram_bus.v gowin_rpll_sys.v top.v"
 
 # top.v instantiates the Gowin rPLL primitive (for the system clock/SDRAM
 # clock - see gateware/src/gowin_rpll_sys.v); yosys needs its Gowin cell
@@ -61,6 +61,13 @@ if [ "$FULL" = "1" ]; then
   else
     fail "synth_gowin failed - see $SYN_LOG"
   fi
+fi
+
+echo "== Gateware + libc: behavioural tests (tools/sim) =="
+if "$ROOT/tools/sim/run_sims.sh"; then
+  :
+else
+  fail "tools/sim/run_sims.sh reported failures (see above)"
 fi
 
 echo "== Sketches: arduino-cli compile =="

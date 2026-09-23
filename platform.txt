@@ -18,7 +18,13 @@ compiler.warning_flags.default=
 compiler.warning_flags.more=-Wall
 compiler.warning_flags.all=-Wall -Wextra
 
-compiler.march={build.march}
+# rv32i plus "m" (Tools > Hardware Multiply/Divide) and "c" (Tools >
+# Compressed Instructions), each driven by its menu in lockstep with the
+# gateware - see boards.txt. The _zicsr_zifencei suffix only spells out
+# what the older rv32i2p0 name implied; no code here uses CSRs.
+build.march_m=
+build.march_c=
+compiler.march=rv32i{build.march_m}{build.march_c}_zicsr_zifencei
 compiler.mabi={build.mabi}
 
 # Overridden per-selection by the Tools > SD Card board menu (see
@@ -58,11 +64,17 @@ build.spi_count=1
 build.i2c_count=1
 
 # Overridden by the Tools > Hardware Multiply/Divide board menu (see
-# boards.txt), which also overrides build.march and build.libgcc_path in
+# boards.txt), which also overrides build.march_m and build.libgcc_path in
 # lockstep - see that menu's comment there for why they must move
 # together. "0" (default) = software mul/div/float, matching every
 # previous build of this core; "1" = real M-extension hardware.
 build.hw_muldiv=0
+
+# Overridden by the Tools > Compressed Instructions / Barrel Shifter board
+# menus (see boards.txt): "0" (default) = off, matching every previous
+# build of this core.
+build.compressed=0
+build.barrel_shifter=0
 
 # Overridden by the Tools > I2S Input board menu (see boards.txt): "0"
 # (default) leaves GPIO6 as plain GPIO and I2S.read() always reads back
@@ -173,7 +185,7 @@ recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.f
 # build (bake the program into SRAM init files, then yosys -> nextpnr ->
 # gowin_pack). Expect this to take noticeably longer than a normal
 # Arduino "compile" step - see docs/BUILDING.md.
-recipe.objcopy.hex.pattern=python3 "{runtime.platform.path}/tools/build_bitstream.py" "{build.path}/{build.project_name}.elf" "{compiler.path}{compiler.objcopy.cmd}" "{build.path}/fpga" "{build.ai_accel}" "{build.boot_flash}" "{build.spi_count}" "{build.i2c_count}" "{build.hw_muldiv}" "{build.i2s_rx}" "{build.clk_freq_hz}" "{build.pll_idiv}" "{build.pll_fbdiv}" "{build.pll_odiv}" "{build.pwm_audio}" "{build.flash_cache}"
+recipe.objcopy.hex.pattern=python3 "{runtime.platform.path}/tools/build_bitstream.py" "{build.path}/{build.project_name}.elf" "{compiler.path}{compiler.objcopy.cmd}" "{build.path}/fpga" "{build.ai_accel}" "{build.boot_flash}" "{build.spi_count}" "{build.i2c_count}" "{build.hw_muldiv}" "{build.i2s_rx}" "{build.clk_freq_hz}" "{build.pll_idiv}" "{build.pll_fbdiv}" "{build.pll_odiv}" "{build.pwm_audio}" "{build.flash_cache}" "{build.compressed}" "{build.barrel_shifter}"
 
 recipe.size.pattern="{compiler.path}{compiler.size.cmd}" -A "{build.path}/{build.project_name}.elf"
 
