@@ -60,6 +60,14 @@ module can_ctrl
    output wire                  irq
    );
 
+   /* Reset through one register: with `negedge reset_n` (or an inverted
+    * copy of it, which yosys folds back), this yosys (0.33) gives every
+    * flip-flop its own inverter in front of its clear input - hundreds of
+    * LUTs for nothing. A flip-flop's output can't be folded that way, so
+    * all clear inputs share it. It releases one clock after reset_n. */
+   reg rst = 1'b1;
+   always @(posedge clk) rst <= !reset_n;
+
    /* --- Registers ---------------------------------------------------- */
 
    wire we = |wstrb;
@@ -148,8 +156,8 @@ module can_ctrl
    // A node resyncs on recessive-to-dominant edges it didn't cause.
    wire       edge_ok = falling && tx_out;
 
-   always @(posedge clk or negedge reset_n)
-     if (!reset_n) begin
+   always @(posedge clk or posedge rst)
+     if (rst) begin
         seg <= SEG_SYNC; pcnt <= 8'd0; tqcnt <= 6'd0;
         t1_len <= 6'd21; t2_len <= 5'd5; resynced <= 1'b0;
         sample_p <= 1'b0; bitstart_p <= 1'b0; hard_synced <= 1'b0;
@@ -231,7 +239,13 @@ module can_ctrl
    reg        rx_ide = 1'b0;
    reg        rx_rtr = 1'b0;
    reg [3:0]  rx_dlc = 4'd0;
-   reg [63:0] rx_data = 64'd0;
+   /* Received data: bits collect in an 8-bit shift register, and each
+    * complete byte is written to its slot - 8 byte enables, instead of
+    * writing single bits at a variable index, which costs a 64-way
+    * multiplexer per bit. */
+   reg [6:0]  rx_byte_sh = 7'd0;
+   reg [63:0] rx_data = 64'd0;   // Byte 0 in [63:56], as received.
+   genvar k;
    reg [8:0]  tec = 9'd0;
    reg [7:0]  rec = 8'd0;
    reg [3:0]  recess_cnt = 4'd0; // consecutive recessive bits
@@ -245,20 +259,48 @@ module can_ctrl
    wire       tx_ext = tx_id[31];
    wire [63:0] tx_seq = {tx_d0[7:0], tx_d0[15:8], tx_d0[23:16], tx_d0[31:24],
                          tx_d1[7:0], tx_d1[15:8], tx_d1[23:16], tx_d1[31:24]};
+
+   /* Each field's bits in transmission order, so field bit k is element
+    * [k], selected by the field's bit counter directly. Indexing as
+    * vec[N - pcnt_bits] instead makes yosys build a multiplexer over every
+    * value of the 7-bit counter (mostly constant, out-of-range entries) -
+    * several hundred LUTs for these few fields. */
+   wire [10:0] tx_ida_ord;  // Base ID: ID[28:18] extended, ID[10:0] standard.
+   wire [17:0] tx_idb_ord;  // Extended ID[17:0].
+   wire [3:0]  tx_dlc_ord;
+   wire [63:0] tx_data_ord;
+   wire [14:0] crc_ord;
+   generate
+     for (k = 0; k < 11; k = k + 1) begin : ida
+       assign tx_ida_ord[k] = tx_ext ? tx_id[28 - k] : tx_id[10 - k];
+     end
+     for (k = 0; k < 18; k = k + 1) begin : idb
+       assign tx_idb_ord[k] = tx_id[17 - k];
+     end
+     for (k = 0; k < 4; k = k + 1) begin : dlc
+       assign tx_dlc_ord[k] = tx_dlc[3 - k];
+     end
+     for (k = 0; k < 64; k = k + 1) begin : data
+       assign tx_data_ord[k] = tx_seq[63 - k];
+     end
+     for (k = 0; k < 15; k = k + 1) begin : crcb
+       assign crc_ord[k] = crc_calc[14 - k];
+     end
+   endgenerate
    wire       stuff_now = stuff_en && (same_cnt == 3'd5);
 
    // Next frame bit this node transmits (when it is the transmitter).
    reg        tx_frame_bit;
    always @(*) begin
       case (pstate)
-        P_ID_A:    tx_frame_bit = tx_ext ? tx_id[28 - pcnt_bits] : tx_id[10 - pcnt_bits];
+        P_ID_A:    tx_frame_bit = tx_ida_ord[pcnt_bits[3:0]];
         P_SRR_RTR: tx_frame_bit = tx_ext;  // SRR recessive / RTR dominant
         P_IDE:     tx_frame_bit = tx_ext;
-        P_ID_B:    tx_frame_bit = tx_id[17 - pcnt_bits];
+        P_ID_B:    tx_frame_bit = tx_idb_ord[pcnt_bits[4:0]];
         P_RTR_B, P_R1, P_R0: tx_frame_bit = 1'b0;
-        P_DLC:     tx_frame_bit = tx_dlc[3 - pcnt_bits];
-        P_DATA:    tx_frame_bit = tx_seq[63 - pcnt_bits];
-        P_CRC:     tx_frame_bit = crc_calc[14 - pcnt_bits];
+        P_DLC:     tx_frame_bit = tx_dlc_ord[pcnt_bits[1:0]];
+        P_DATA:    tx_frame_bit = tx_data_ord[pcnt_bits[5:0]];
+        P_CRC:     tx_frame_bit = crc_ord[pcnt_bits[3:0]];
         default:   tx_frame_bit = 1'b1;
       endcase
    end
@@ -277,8 +319,13 @@ module can_ctrl
    wire rx_empty = (rx_count == 0);
    wire rx_full = (rx_count == RX_DEPTH);
    reg  rx_store = 1'b0;
-   reg [98:0] rx_entry = 99'd0;
    wire [98:0] rx_head = rx_mem[rx_rd[RX_DEPTH_LOG2-1:0]];
+   // Written straight from the receive registers: rx_store pulses the
+   // clock after the frame completes, and they don't change until the
+   // next SOF, at least three bit times later.
+   wire [98:0] rx_entry = {rx_ide, rx_rtr,
+                           rx_ide ? {rx_id_a, rx_id_b} : {18'd0, rx_id_a},
+                           rx_dlc, rx_data};
 
    always @(posedge clk)
      if (rx_store && !rx_full)
@@ -320,21 +367,21 @@ module can_ctrl
 
    wire [14:0] crc_next = {crc[13:0], 1'b0} ^ ((rx_s ^ crc[14]) ? 15'h4599 : 15'h0);
 
-   always @(posedge clk or negedge reset_n)
-     if (!reset_n) begin
+   always @(posedge clk or posedge rst)
+     if (rst) begin
         pstate <= P_OFF; transmitting <= 1'b0; tx_out <= 1'b1;
         pcnt_bits <= 7'd0; crc <= 15'd0; crc_calc <= 15'd0; crc_rx <= 15'd0;
         crc_ok <= 1'b0; stuff_en <= 1'b0; last_bit <= 1'b1; same_cnt <= 3'd0;
         tec <= 9'd0; rec <= 8'd0; recess_cnt <= 4'd0; busoff_cnt <= 8'd0;
         err_flag_passive <= 1'b0; err_was_tx <= 1'b0; dom_cnt <= 3'd0; rx_store <= 1'b0;
         rx_id_a <= 11'd0; rx_id_b <= 18'd0; rx_srr_rtr <= 1'b0; rx_ide <= 1'b0;
-        rx_rtr <= 1'b0; rx_dlc <= 4'd0; rx_data <= 64'd0;
+        rx_rtr <= 1'b0; rx_dlc <= 4'd0; rx_data <= 64'd0; rx_byte_sh <= 7'd0;
         enable <= 1'b0; loopback <= 1'b0; rx_irq_en <= 1'b0;
         tx_pin <= 5'd18; rx_pin <= 5'd11;
         brp <= 8'd0; tseg1 <= 5'd20; tseg2 <= 4'd4; sjw <= 2'd3;
         tx_id <= 32'd0; tx_d0 <= 32'd0; tx_d1 <= 32'd0; tx_dlc <= 4'd0;
         tx_pending <= 1'b0; tx_ok_flag <= 1'b0; rx_ovf_flag <= 1'b0;
-        rx_wr <= 0; rx_rd <= 0; rx_entry <= 99'd0;
+        rx_wr <= 0; rx_rd <= 0;
      end else begin
         rx_store <= 1'b0;
 
@@ -495,7 +542,9 @@ module can_ctrl
                 pcnt_bits <= pcnt_bits + 7'd1;
            end
            P_DATA: begin
-              rx_data[63 - pcnt_bits[5:0]] <= rx_s;
+              rx_byte_sh <= {rx_byte_sh[5:0], rx_s};
+              if (pcnt_bits[2:0] == 3'd7)
+                rx_data[63 - 8 * pcnt_bits[5:3] -: 8] <= {rx_byte_sh, rx_s};
               if (pcnt_bits + 7'd1 == {data_bytes, 3'b000}) begin
                  pstate <= P_CRC;
                  pcnt_bits <= 7'd0;
@@ -542,9 +591,6 @@ module can_ctrl
                  end
                  if (!transmitting || loopback) begin
                     rx_store <= 1'b1;
-                    rx_entry <= {rx_ide, rx_rtr,
-                                 rx_ide ? {rx_id_a, rx_id_b} : {18'd0, rx_id_a},
-                                 rx_dlc, rx_data};
                  end
               end else
                 pcnt_bits <= pcnt_bits + 7'd1;
