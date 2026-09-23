@@ -70,7 +70,7 @@
   mode (`dmaCopyWords()`/`dmaCopy()`) has no such restriction, but stalls
   the CPU (including instruction fetch - picorv32 has no separate
   instruction bus) for the whole transfer.
-- No CAN or USB.
+- No USB.
 - **Nothing here has been run on real hardware.** Everything is verified
   only via `yosys` elaboration/synthesis and `arduino-cli compile`; see
   `tools/run_tests.sh`.

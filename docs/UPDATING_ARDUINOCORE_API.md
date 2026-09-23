@@ -7,10 +7,11 @@ and the submodule's root also carries a Catch2 `test/` tree that isn't
 meant to be built into a sketch. `tools/vendor_arduino_api.sh` copies just
 the needed subset (all headers, plus only the `.cpp` files this core
 actually links: `Common.cpp`, `Print.cpp`, `Stream.cpp`, `String.cpp` -
-the last needs `malloc`/`free`/`realloc`, see
-`cores/tangnano20k/tangnano20k_malloc.c`). `IPAddress.cpp`, `CanMsg*.cpp`,
-and `PluggableUSB.cpp` are still left out - they'd need actual networking/
-USB support this bare-metal core doesn't provide.
+which needs `malloc`/`free`/`realloc`, see
+`cores/tangnano20k/tangnano20k_malloc.c` - and `CanMsg.cpp`/
+`CanMsgRingbuffer.cpp` for `libraries/CAN`). `IPAddress.cpp` and
+`PluggableUSB.cpp` are still left out - they'd need actual networking/USB
+support this bare-metal core doesn't provide.
 
 After updating the submodule:
 

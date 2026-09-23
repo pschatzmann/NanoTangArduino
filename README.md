@@ -38,6 +38,7 @@ rather than a full FPGA rebuild - see
 - Interrupts (`attachInterrupt()`, `tone()` from hardware PWM, a `TangTimer` callback-timer library)
 - `Servo`, on the hardware PWM channels
 - External WS2812 (NeoPixel) LED strips on any GPIO pin
+- CAN bus (Tools > CAN) with Arduino's standard `HardwareCAN` API
 - `printf`/`snprintf`
 - `SoftwareSerial`, a bit-banged second serial port on any two GPIO pins
 - Hardware-accelerated bulk memory copy (`DMA`), including a background/async mode

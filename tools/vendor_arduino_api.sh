@@ -9,10 +9,11 @@
 # String/IPAddress/etc. only by declaration). Only the .cpp files this
 # core actually links against are copied: Common.cpp, Print.cpp,
 # Stream.cpp, String.cpp (needs malloc/free/realloc - see
-# cores/tangnano20k/tangnano20k_malloc.c). IPAddress.cpp/CanMsg*.cpp/
-# PluggableUSB.cpp need USB/networking support this bare-metal core
-# doesn't provide, so their headers are available (for API completeness /
-# future use) but their implementations are intentionally left out.
+# cores/tangnano20k/tangnano20k_malloc.c), and CanMsg.cpp/
+# CanMsgRingbuffer.cpp (for libraries/CAN; only linked when it's used).
+# IPAddress.cpp/PluggableUSB.cpp need USB/networking support this
+# bare-metal core doesn't provide, so their headers are available (for API
+# completeness / future use) but their implementations are left out.
 #
 # Run this again after updating the ArduinoCore-API submodule.
 set -euo pipefail
@@ -31,8 +32,8 @@ mkdir -p "$DST"
 done
 
 # Only the .cpp files this core links against.
-for f in Common.cpp Print.cpp Stream.cpp String.cpp; do
+for f in Common.cpp Print.cpp Stream.cpp String.cpp CanMsg.cpp CanMsgRingbuffer.cpp; do
   cp "$SRC/$f" "$DST/$f"
 done
 
-echo "Vendored ArduinoCore-API headers + {Common,Print,Stream,String}.cpp into $DST"
+echo "Vendored ArduinoCore-API headers + {Common,Print,Stream,String,CanMsg,CanMsgRingbuffer}.cpp into $DST"

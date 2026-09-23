@@ -24,7 +24,8 @@ sketch.ino ──arduino-cli/IDE──> RISC-V ELF (cores/tangnano20k + api/)
   an external I2S microphone), `pwm_bank` (`analogWrite()`/`analogWriteFrequency()` on the
   LEDs and GPIO pins), `spi_master` and `od_gpio2` (bit-banged I2C), `gpio_bank`
   (general-purpose expansion-header GPIO), `ws2812_strip` (the
-  onboard addressable RGB LED and external WS2812 strips), `extirq` (pin-change source for
+  onboard addressable RGB LED and external WS2812 strips), `can_ctrl`
+  (CAN bus, Tools > CAN), `extirq` (pin-change source for
   `attachInterrupt()` — see [Interrupts](PERIPHERALS.md#interrupts)),
   `dma_engine` (the SoC's second bus master, see
   [DMA](PERIPHERALS.md#dma)),
@@ -126,6 +127,7 @@ Also set when the corresponding `Tools >` menu option is enabled (see
 | `0x8000_00B0`                | I2C2 open-drain SDA/SCL - Tools > I2C Buses: Two only |
 | `0x8000_00C0`-`0x8000_00C8`  | GPIO OUT SET/CLR/TOGGLE (write 1 bits to act)      |
 | `0x8000_00D0`-`0x8000_00D4`  | GPIO DIR SET/CLR (write 1 bits to act)             |
+| `0x8000_00E0`-`0x8000_00F8`  | CAN controller - Tools > CAN only (see `can_ctrl.v`) |
 | `0x8000_0100`                | GPIO direction register (bits [20:0], 1=output)    |
 | `0x8000_0104`                | GPIO output register (bits [20:0])                 |
 | `0x8000_0108`                | GPIO input register (bits [20:0], read-only)       |

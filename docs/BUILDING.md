@@ -235,12 +235,33 @@ hundred LUTs. Gateware only; the compiler flags don't change.
 | Disabled (default) | `:barrel_shifter=disabled` |
 | Enabled | `:barrel_shifter=enabled` |
 
+### CAN
+
+See [Peripherals: CAN](PERIPHERALS.md#can). **Disabled by default** -
+enabling it synthesizes the CAN controller for `libraries/CAN`. Its pins
+are chosen at run time, so it claims no GPIO pin up front.
+
+| Option | FQBN suffix |
+|---|---|
+| Disabled (default) | `:can=disabled` |
+| Enabled | `:can=enabled` |
+
 ## Verifying changes
 
 ```sh
-tools/run_tests.sh          # yosys hierarchy check + tools/sim tests + compile every example
-tools/run_tests.sh --full   # also run one standalone full synth_gowin pass on the gateware (slow, ~1-2 min)
+tools/run_tests.sh                 # yosys check + tools/sim tests + compile every example,
+                                   # then the FPGA flow once per Tools option combination
+tools/run_tests.sh --compile-only  # skip the FPGA flow - a couple of minutes in total
+tools/run_tests.sh --utilization   # also build the CPU options no example uses (LUT figures)
+tools/run_tests.sh --full          # also run one standalone synth_gowin pass on the gateware
 ```
+
+Every example is compiled and linked against this checkout (a temporary
+arduino-cli config points at it, so an installed Boards Manager release
+can't be picked up instead). The FPGA flow only depends on the Tools
+options, not on the sketch, so it runs once per distinct option
+combination the examples use, and prints nextpnr's device utilization for
+each.
 
 `tools/sim/run_sims.sh` (also run on its own in seconds) simulates the
 Arduino-core gateware with iverilog - systick counters, UART FIFOs,
@@ -250,11 +271,9 @@ spec-following slave model, WS2812 strip streaming - and tests the core's
 `iverilog` and a host `gcc`; each part is skipped with a warning if the
 tool is missing.
 
-Every example compile goes through the full FPGA flow (synthesis, place &
-route, and pack), the same as an actual upload in the default SRAM boot
-mode - with a full nextpnr-himbaechel install, running the whole suite
-against every example can take a long time (each example's place & route
-alone can run several minutes). This is the extent of verification
+Each FPGA build (synthesis, place & route, and pack) is the same as an
+actual upload in the default SRAM boot mode, and place & route alone can
+take 20 minutes or more, so a full run takes hours. This is the extent of verification
 possible without the physical board: it confirms the gateware elaborates/
 synthesizes, every example compiles and links, and (when nextpnr-himbaechel
 succeeds) that a real bitstream is produced - but it cannot confirm a

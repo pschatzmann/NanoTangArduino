@@ -434,6 +434,62 @@ Untested on real hardware, like everything else in this repo (see
 and the SPI timing this library assumes have not been exercised against
 an actual card or the real gateware. See `libraries/SD/examples/SDReadWrite`.
 
+## CAN
+
+`#include <CAN.h>` (`libraries/CAN/`), with **Tools > CAN: Enabled**. It
+implements Arduino's standard `HardwareCAN` API, the same one as on the
+UNO R4:
+
+```cpp
+CAN.begin(CanBitRate::BR_500k);
+uint8_t data[] = {1, 2, 3};
+CAN.write(CanMsg(CanStandardId(0x123), sizeof(data), data));
+while (CAN.available()) {
+  CanMsg msg = CAN.read();
+  Serial.println(msg);
+}
+```
+
+It's backed by `gateware/src/can_ctrl.v`, a compact CAN 2.0A/B controller
+written for this core:
+
+- Standard (11-bit) and extended (29-bit) data frames; remote frames are
+  received too (with zeroed data, since `CanMsg` can't mark them).
+- Bit timing with hard and soft resynchronization, bit stuffing, CRC-15
+  and arbitration. A node that loses arbitration retries automatically,
+  and so does one whose frame hits an error.
+- ACK, bit, stuff, CRC and form error detection with error frames, the
+  TEC/REC error counters, error-passive and bus-off states, and bus-off
+  recovery after 128 x 11 recessive bits.
+- Not implemented: overload frames. A dominant bit anywhere in the
+  intermission is taken as a start of frame.
+
+It needs an external 3.3V CAN transceiver, such as an SN65HVD230, whose
+TXD/RXD go to two GPIO pins: GPIO18 (TX, FPGA pin 71) and GPIO11 (RX,
+pin 76) by default. `CAN.setPins(tx, rx)` before `begin()` picks others,
+since the pins are routed at run time. Avoid pins claimed by another
+Tools option, such as SPI2 or PWM Audio. `CAN.setLoopback(true)` connects
+TX to RX inside the FPGA and acknowledges its own frames, a self-test
+that needs no transceiver (see `libraries/CAN/examples/CANLoopback`).
+
+Bit rates are the API's 125k/250k/500k/1M. `begin()` returns false if the
+rate can't be made exactly from the system clock: 1 Mbit/s needs the 27 or
+54MHz clock, not Low Power (13.5MHz). The sample point is at about 80%.
+The controller holds one outgoing frame: `write()` waits up to about
+three frame times for the previous one to leave, then returns -1 (still
+pending, for example because no other node acknowledges it), -2 when bus
+off, or 1 when queued. Received frames move from the controller's 8-frame
+FIFO into a 32-frame software buffer from an interrupt (`irq[7]`), so
+`loop()` needn't keep up with a busy bus. `overflow()` reports dropped
+frames, and `txErrorCount()`/`rxErrorCount()`/`isErrorPassive()`/
+`isBusOff()` expose the error state.
+
+This is verified in simulation only (`tools/sim/tb_can.v`: three
+controllers on one bus, checked against reference bitstreams from an
+independent encoder, covering arbitration, errors, bus-off and loopback).
+It hasn't run against real CAN hardware yet. See
+`libraries/CAN/examples/CANSendReceive`.
+
 ## Heap / `malloc`
 
 The board's GW2AR-18 package has an **embedded** 64Mbit (8MB, 32-bit bus)

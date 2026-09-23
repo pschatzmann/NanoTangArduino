@@ -76,6 +76,10 @@ build.hw_muldiv=0
 build.compressed=0
 build.barrel_shifter=0
 
+# Overridden by the Tools > CAN board menu (see boards.txt): "0" (default)
+# leaves the CAN controller out of the gateware.
+build.can=0
+
 # Overridden by the Tools > I2S Input board menu (see boards.txt): "0"
 # (default) leaves GPIO6 as plain GPIO and I2S.read() always reads back
 # zero; "1" wires GPIO6 to the I2S peripheral's receive input for an
@@ -185,7 +189,7 @@ recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.f
 # build (bake the program into SRAM init files, then yosys -> nextpnr ->
 # gowin_pack). Expect this to take noticeably longer than a normal
 # Arduino "compile" step - see docs/BUILDING.md.
-recipe.objcopy.hex.pattern=python3 "{runtime.platform.path}/tools/build_bitstream.py" "{build.path}/{build.project_name}.elf" "{compiler.path}{compiler.objcopy.cmd}" "{build.path}/fpga" "{build.ai_accel}" "{build.boot_flash}" "{build.spi_count}" "{build.i2c_count}" "{build.hw_muldiv}" "{build.i2s_rx}" "{build.clk_freq_hz}" "{build.pll_idiv}" "{build.pll_fbdiv}" "{build.pll_odiv}" "{build.pwm_audio}" "{build.flash_cache}" "{build.compressed}" "{build.barrel_shifter}"
+recipe.objcopy.hex.pattern=python3 "{runtime.platform.path}/tools/build_bitstream.py" "{build.path}/{build.project_name}.elf" "{compiler.path}{compiler.objcopy.cmd}" "{build.path}/fpga" "{build.ai_accel}" "{build.boot_flash}" "{build.spi_count}" "{build.i2c_count}" "{build.hw_muldiv}" "{build.i2s_rx}" "{build.clk_freq_hz}" "{build.pll_idiv}" "{build.pll_fbdiv}" "{build.pll_odiv}" "{build.pwm_audio}" "{build.flash_cache}" "{build.compressed}" "{build.barrel_shifter}" "{build.can}"
 
 recipe.size.pattern="{compiler.path}{compiler.size.cmd}" -A "{build.path}/{build.project_name}.elf"
 

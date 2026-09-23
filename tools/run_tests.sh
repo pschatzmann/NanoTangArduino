@@ -5,9 +5,14 @@
 #
 # Usage:
 #   tools/run_tests.sh                 # yosys hierarchy check + tools/sim tests +
-#                                      # build every example through the full FPGA flow
-#   tools/run_tests.sh --compile-only  # same, but examples only compile and link
-#                                      # (skips synthesis/place & route - seconds, not minutes)
+#                                      # compile/link every example, then run the
+#                                      # full FPGA flow once per distinct Tools
+#                                      # option combination the examples use
+#   tools/run_tests.sh --compile-only  # skip the FPGA flow (seconds, not hours)
+#   tools/run_tests.sh --utilization   # also run the FPGA flow for Blink with each
+#                                      # CPU option no example needs (Compressed,
+#                                      # Barrel Shifter, Multiply/Divide, Flash
+#                                      # Cache), for the LUT table in docs/BUILDING.md
 #   tools/run_tests.sh --full          # also run a full synth_gowin pass (slow,
 #                                      # ~1-2 min; catches real synthesis issues
 #                                      # like the BRAM-inference gap in docs/KNOWN_LIMITATIONS.md)
@@ -29,10 +34,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FQBN="nanotang:tangnano20k:tangnano20k"
 FULL=0
 COMPILE_ONLY=0
+UTILIZATION=0
 for arg in "$@"; do
   case "$arg" in
     --full) FULL=1 ;;
     --compile-only) COMPILE_ONLY=1 ;;
+    --utilization) UTILIZATION=1 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
@@ -43,7 +50,7 @@ warn() { echo "  WARN: $1"; }
 fail() { echo "  FAIL: $1"; FAIL=1; }
 
 echo "== Gateware: yosys hierarchy check =="
-GW_SOURCES="picorv32.v sram8bit.v sram.v simpleuart.v uart_wrap.v reset.v systick.v tang_leds.v i2s.v pwm_bank.v pwm_audio.v spi_master.v od_gpio2.v gpio_bank.v ws2812_strip.v extirq.v dma_engine.v qspi_flash.v qspi_flash_cached.v int8_mac_lane.v dot_product_lane_array.v byte_interleave_ram.v dot_product_engine.v ai_accel_bus.v sdram.v sdram_bus.v gowin_rpll_sys.v top.v"
+GW_SOURCES="picorv32.v sram8bit.v sram.v simpleuart.v uart_wrap.v reset.v systick.v tang_leds.v i2s.v pwm_bank.v pwm_audio.v spi_master.v od_gpio2.v gpio_bank.v ws2812_strip.v can_ctrl.v extirq.v dma_engine.v qspi_flash.v qspi_flash_cached.v int8_mac_lane.v dot_product_lane_array.v byte_interleave_ram.v dot_product_engine.v ai_accel_bus.v sdram.v sdram_bus.v gowin_rpll_sys.v top.v"
 
 # top.v instantiates the Gowin rPLL primitive (for the system clock/SDRAM
 # clock - see gateware/src/gowin_rpll_sys.v); yosys needs its Gowin cell
@@ -104,60 +111,99 @@ directories:
 CFG
   CLI=(arduino-cli --config-file "$CLI_DIR/cli.yaml")
 
-  EXTRA=()
-  if [ "$COMPILE_ONLY" = "1" ]; then
-    # recipe.objcopy.hex.pattern is what drives the FPGA flow (see
-    # platform.txt) - replacing it with a no-op leaves compile + link.
-    EXTRA=(--build-property "recipe.objcopy.hex.pattern=true")
-  fi
+  # recipe.objcopy.hex.pattern is what drives the FPGA flow (see
+  # platform.txt) - replacing it with a no-op leaves compile + link.
+  NO_FPGA=(--build-property "recipe.objcopy.hex.pattern=true")
+
+  # Tools menu options an example needs to compile or do anything useful
+  # (e.g. SD.h's deliberate #error unless the GPLv3 menu is enabled - see
+  # docs/PERIPHERALS.md "SD card").
+  menu_for() {
+    case "$1" in
+      SDReadWrite) echo ":sd_card=enabled" ;;
+      PWMAudio*) echo ":pwm_audio=enabled" ;;
+      I2SDuplex*) echo ":i2s_rx=enabled" ;;
+      AIAccelerator*) echo ":ai_accel=enabled" ;;
+      ExtraSPII2C*) echo ":spi_buses=two,i2c_buses=two" ;;
+      CAN*) echo ":can=enabled" ;;
+      *) echo "" ;;
+    esac
+  }
+
+  # nextpnr's "Device utilisation" block, condensed to the main resources.
+  utilization() {
+    awk '/Device utilisation/{on=1; next} on && /^Info:[[:space:]]+[A-Za-z0-9_]+:[[:space:]]+[0-9]+\/[0-9]+/{print} on && !/^Info:[[:space:]]+[A-Za-z0-9_]+:/{on=0}' "$1" |
+      grep -E "LUT4|DFF|ALU|BSRAM|MULT|SSRAM|RAM16" | sed -E 's/^Info:[[:space:]]+/        /'
+  }
+
+  # build <label> <fqbn suffix> <sketch dir> <mode: compile|fpga>
+  build() {
+    local label="$1" menu="$2" dir="$3" mode="$4"
+    local name build_path log rc took elf
+    name="$(basename "$dir")"
+    build_path="$(mktemp -d)"
+    log="$(mktemp)"
+    local extra=()
+    [ "$mode" = "compile" ] && extra=("${NO_FPGA[@]}")
+    local start_s=$SECONDS
+    "${CLI[@]}" compile --fqbn "$FQBN$menu" --build-path "$build_path" "${extra[@]}" "$dir" >"$log" 2>&1
+    rc=$?
+    took="$((SECONDS - start_s))s"
+    elf="$build_path/$name.ino.elf"
+    if [ $rc -eq 0 ] && [ "$mode" = "compile" ]; then
+      pass "$label (compiled and linked, $took)"
+    elif [ $rc -eq 0 ]; then
+      pass "$label (bitstream built, $took)"
+      utilization "$log"
+    elif [ -f "$elf" ] && grep -q "no BELs remaining to implement cell type 'RAM16SDP4'" "$log"; then
+      warn "$label compiled+linked+synthesized OK; stopped at the known Gowin BRAM-inference gap (see docs/KNOWN_LIMITATIONS.md)"
+    elif [ -f "$elf" ] && grep -q "Unconstrained IO" "$log"; then
+      warn "$label compiled+linked+synthesized OK; an unconstrained IO turned up during place & route - see $log"
+      log=""
+    elif [ -f "$elf" ] && grep -q "nextpnr-himbaechel" "$log"; then
+      warn "$label compiled+linked OK; nextpnr-himbaechel isn't installed or failed - see docs/BUILDING.md and $log"
+      log=""
+    elif [ -f "$elf" ]; then
+      warn "$label compiled+linked OK; FPGA build step failed for another reason - see $log"
+      log=""
+    else
+      fail "$label did not compile/link - see $log"
+      log=""  # keep the log around for inspection
+    fi
+    rm -rf "$build_path"
+    [ -n "$log" ] && rm -f "$log"
+  }
 
   if ! "${CLI[@]}" board listall 2>/dev/null | grep -q "$FQBN"; then
     fail "FQBN $FQBN not found - is the RISC-V toolchain installed (install the nanotang package once via Boards Manager)? See docs/BUILDING.md"
   else
+    # Every example compiles and links...
+    declare -A fpga_example=()
     for dir in "$ROOT"/libraries/*/examples/*/; do
       name="$(basename "$dir")"
-      build_path="$(mktemp -d)"
-      log="$(mktemp)"
-
-      # Some examples need a non-default Tools menu selection to compile
-      # or to do anything useful (e.g. SD.h's deliberate #error unless the
-      # GPLv3 menu is explicitly enabled - see docs/PERIPHERALS.md "SD card").
-      case "$name" in
-        SDReadWrite) menu=":sd_card=enabled" ;;
-        PWMAudio*) menu=":pwm_audio=enabled" ;;
-        I2SDuplex*) menu=":i2s_rx=enabled" ;;
-        AIAccelerator*) menu=":ai_accel=enabled" ;;
-        ExtraSPII2C*) menu=":spi_buses=two,i2c_buses=two" ;;
-        *) menu="" ;;
-      esac
-
-      start_s=$SECONDS
-      "${CLI[@]}" compile --fqbn "$FQBN$menu" --build-path "$build_path" "${EXTRA[@]}" "$dir" >"$log" 2>&1
-      rc=$?
-      took="$((SECONDS - start_s))s"
-      elf="$build_path/$name.ino.elf"
-      if [ $rc -eq 0 ] && [ "$COMPILE_ONLY" = "1" ]; then
-        pass "$name (compiled and linked, $took)"
-      elif [ $rc -eq 0 ]; then
-        pass "$name (compiled, linked, and built into a bitstream, $took)"
-      elif [ -f "$elf" ] && grep -q "no BELs remaining to implement cell type 'RAM16SDP4'" "$log"; then
-        warn "$name compiled+linked+synthesized OK; stopped at the known Gowin BRAM-inference gap (see docs/KNOWN_LIMITATIONS.md)"
-      elif [ -f "$elf" ] && grep -q "Unconstrained IO" "$log"; then
-        warn "$name compiled+linked+synthesized OK; an unconstrained IO turned up during place & route - see $log (docs/KNOWN_LIMITATIONS.md's SDRAM entry covers the one previously-known case, now fixed)"
-        log=""
-      elif [ -f "$elf" ] && grep -q "nextpnr-himbaechel" "$log"; then
-        warn "$name compiled+linked OK; nextpnr-himbaechel isn't installed or failed - see docs/BUILDING.md and $log"
-        log=""
-      elif [ -f "$elf" ]; then
-        warn "$name compiled+linked OK; FPGA build step failed for another reason - see $log"
-        log=""
-      else
-        fail "$name did not compile/link - see $log"
-        log=""  # keep the log around for inspection
-      fi
-      rm -rf "$build_path"
-      [ -n "$log" ] && rm -f "$log"
+      menu="$(menu_for "$name")"
+      build "$name" "$menu" "$dir" compile
+      key="${menu:-defaults}" # Bash arrays can't have an empty key.
+      [ -z "${fpga_example[$key]+x}" ] && fpga_example[$key]="$dir"
     done
+
+    # ...and the FPGA flow runs once per distinct Tools option combination:
+    # the gateware only depends on those, not on the sketch, and each run
+    # takes many minutes.
+    if [ "$COMPILE_ONLY" = "0" ]; then
+      echo "== FPGA flow: one build per Tools option combination =="
+      for key in "${!fpga_example[@]}"; do
+        dir="${fpga_example[$key]}"
+        menu="$key"
+        [ "$menu" = "defaults" ] && menu=""
+        build "$(basename "$dir") [$key]" "$menu" "$dir" fpga
+      done
+      if [ "$UTILIZATION" = "1" ]; then
+        for menu in ":compressed=enabled" ":barrel_shifter=enabled" ":hw_muldiv=enabled" ":flash_cache=enabled" ":spi_buses=none,i2c_buses=none"; do
+          build "Blink [$menu]" "$menu" "$ROOT/libraries/Core/examples/Blink/" fpga
+        done
+      fi
+    fi
   fi
   rm -rf "$CLI_DIR"
 fi

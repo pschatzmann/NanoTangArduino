@@ -48,6 +48,8 @@
  *                                 read-only, valid regardless of direction)
  *   0x8000_00c0 - 0x8000_00c8    GPIO OUT SET/CLR/TOGGLE (write 1 bits to act)
  *   0x8000_00d0 - 0x8000_00d4    GPIO DIR SET/CLR (write 1 bits to act)
+ *   0x8000_00e0 - 0x8000_00f8    CAN controller (Tools > CAN only - see
+ *                                 can_ctrl.v); reads 0 when disabled
  *   0x8000_0110                  WS2812 data: write {G[7:0],R[7:0],B[7:0]}
  *                                 in bits [23:0] to queue a pixel (stalls
  *                                 while one is already queued); read bit0 =
@@ -298,6 +300,12 @@ module top
    wire [31:0]       ws2812_rdata;
    wire [20:0]       ws2812_gpio_override;
    wire [20:0]       ws2812_gpio_value;
+   wire              can_sel;
+   wire              can_ready;
+   wire [31:0]       can_rdata;
+   wire [20:0]       can_gpio_override;
+   wire [20:0]       can_gpio_value;
+   wire              can_irq_out;
    wire              extirq_enable_sel;
    wire              extirq_status_sel;
    wire              extirq_level_sel;
@@ -336,6 +344,7 @@ module top
    assign i2c_sel     = mem_valid && (mem_addr == 32'h8000_0090);
    assign gpio_sel    = mem_valid && ((mem_addr & 32'hffff_fff0) == 32'h8000_0100);
    assign gpio_atomic_sel = mem_valid && ((mem_addr & 32'hffff_ffe0) == 32'h8000_00c0);
+   assign can_sel     = mem_valid && ((mem_addr & 32'hffff_ffe0) == 32'h8000_00e0);
    assign ws2812_sel  = mem_valid && ((mem_addr & 32'hffff_fff8) == 32'h8000_0110);
    assign ai_sel      = mem_valid && ((mem_addr & 32'hffff_ffe0) == 32'h8000_0140);
    assign extirq_enable_sel = mem_valid && (mem_addr == 32'h8000_0120);
@@ -397,7 +406,7 @@ module top
                         i2s_ready | key2_sel | pwm_ready | spi_ready | i2c_ready |
                         sdram_ready | gpio_ready | ai_ready | ws2812_ready |
                         extirq_ready | dma_ctrl_ready | flash_ready |
-                        spi2_ready | i2c2_ready | pwm_audio_ready);
+                        spi2_ready | i2c2_ready | pwm_audio_ready | can_ready);
 
    assign mem_rdata = sram_sel    ? sram_data_o :
                       leds_sel    ? leds_data_o :
@@ -417,7 +426,8 @@ module top
                       spi2_sel     ? spi2_rdata :
                       i2c2_sel     ? i2c2_rdata :
                       pwm_audio_sel ? pwm_audio_rdata :
-                      ws2812_sel   ? ws2812_rdata : 32'h0;
+                      ws2812_sel   ? ws2812_rdata :
+                      can_sel      ? can_rdata : 32'h0;
 
    // Per-LED mux: PWM output while analogWrite() has a channel on that LED,
    // else the plain digital value from tang_leds.
@@ -584,9 +594,9 @@ module top
       .wdata(mem_wdata),
       .ready(gpio_ready),
       .rdata(gpio_rdata),
-      // A pin can be claimed by a PWM channel or the WS2812 driver.
-      .override(pwm_gpio_override | ws2812_gpio_override),
-      .override_value(pwm_gpio_value | ws2812_gpio_value),
+      // A pin can be claimed by a PWM channel, the WS2812 driver or CAN TX.
+      .override(pwm_gpio_override | ws2812_gpio_override | can_gpio_override),
+      .override_value(pwm_gpio_value | ws2812_gpio_value | can_gpio_value),
       .gpio({gpio[20:18],
 `ifdef WITH_PWM_AUDIO
              gpio_bank_dummy_pwm_audio,
@@ -705,6 +715,34 @@ module top
       .gpio_value(ws2812_gpio_value)
       );
 
+`ifdef WITH_CAN
+   // Tools > CAN: the CAN controller, TX/RX on GPIO pins chosen at run
+   // time (default GPIO18/GPIO11) - see can_ctrl.v and libraries/CAN.
+   can_ctrl can
+     (
+      .clk(clk_sys),
+      .reset_n(reset_n),
+      .sel(can_sel),
+      .addr(mem_addr[4:0]),
+      .wstrb(mem_wstrb),
+      .wdata(mem_wdata),
+      .ready(can_ready),
+      .rdata(can_rdata),
+      .gpio_in(gpio),
+      .gpio_override(can_gpio_override),
+      .gpio_value(can_gpio_value),
+      .irq(can_irq_out)
+      );
+`else
+   // Absent: accesses complete and read 0 (STATUS bit31 "present" clear),
+   // so libraries/CAN's begin() can report that the menu is disabled.
+   assign can_ready = can_sel;
+   assign can_rdata = 32'h0;
+   assign can_gpio_override = 21'b0;
+   assign can_gpio_value = 21'b0;
+   assign can_irq_out = 1'b0;
+`endif
+
 `ifdef WITH_AI_ACCEL
    ai_accel_bus ai_accel
      (
@@ -821,7 +859,7 @@ module top
         .mem_wdata   (cpu_mem_wdata),
         .mem_wstrb   (cpu_mem_wstrb),
         .mem_rdata   (cpu_mem_rdata),
-        .irq         ({25'b0, pwm_audio_irq_out, i2s_irq_out, dma_irq_out, extirq_out, 3'b0})
+        .irq         ({24'b0, can_irq_out, pwm_audio_irq_out, i2s_irq_out, dma_irq_out, extirq_out, 3'b0})
         );
 
    dma_engine dma

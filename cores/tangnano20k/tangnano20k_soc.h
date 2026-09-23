@@ -75,6 +75,31 @@
 #define TANGNANO20K_GPIO_OUT_TOGGLE_REG (*(volatile uint32_t *)0x800000C8UL)
 #define TANGNANO20K_GPIO_DIR_SET_REG    (*(volatile uint32_t *)0x800000D0UL)
 #define TANGNANO20K_GPIO_DIR_CLR_REG    (*(volatile uint32_t *)0x800000D4UL)
+
+/* gateware/src/can_ctrl.v - Tools > CAN only; see libraries/CAN. */
+#define TANGNANO20K_CAN_CTRL_REG   (*(volatile uint32_t *)0x800000E0UL) // W CTRL / R STATUS
+#define TANGNANO20K_CAN_TIMING_REG (*(volatile uint32_t *)0x800000E4UL)
+#define TANGNANO20K_CAN_ID_REG     (*(volatile uint32_t *)0x800000E8UL) // W TX_ID / R RX_ID
+#define TANGNANO20K_CAN_DATA0_REG  (*(volatile uint32_t *)0x800000ECUL)
+#define TANGNANO20K_CAN_DATA1_REG  (*(volatile uint32_t *)0x800000F0UL)
+#define TANGNANO20K_CAN_CMD_REG    (*(volatile uint32_t *)0x800000F4UL) // W TX_CMD / R RX_DLC
+#define TANGNANO20K_CAN_POP_REG    (*(volatile uint32_t *)0x800000F8UL) // W RX_POP / R ERRCNT
+#define TANGNANO20K_CAN_CTRL_ENABLE    (1UL << 0)
+#define TANGNANO20K_CAN_CTRL_LOOPBACK  (1UL << 1)
+#define TANGNANO20K_CAN_CTRL_RX_IRQ    (1UL << 2)
+#define TANGNANO20K_CAN_CTRL_TX_PIN(n) (((uint32_t)(n) & 0x1FUL) << 8)
+#define TANGNANO20K_CAN_CTRL_RX_PIN(n) (((uint32_t)(n) & 0x1FUL) << 16)
+#define TANGNANO20K_CAN_STATUS_TX_PENDING  (1UL << 0)
+#define TANGNANO20K_CAN_STATUS_RX_READY    (1UL << 1)
+#define TANGNANO20K_CAN_STATUS_RX_OVERFLOW (1UL << 2) // sticky, read-clears
+#define TANGNANO20K_CAN_STATUS_PASSIVE     (1UL << 3)
+#define TANGNANO20K_CAN_STATUS_BUS_OFF     (1UL << 4)
+#define TANGNANO20K_CAN_STATUS_TX_OK       (1UL << 5) // sticky, read-clears
+#define TANGNANO20K_CAN_STATUS_PRESENT     (1UL << 31)
+#define TANGNANO20K_CAN_ID_EXTENDED (1UL << 31)
+#define TANGNANO20K_CAN_ID_REMOTE   (1UL << 30)
+#define TANGNANO20K_CAN_CMD_SEND    (1UL << 8)
+#define TANGNANO20K_CAN_CMD_ABORT   (1UL << 9)
 /* gateware/src/ws2812_strip.v: write queues a {G,R,B} pixel, read bit0 =
  * busy (frame still sending or latching). CFG routes the output to a
  * GPIO pin (see libraries/WS2812). */

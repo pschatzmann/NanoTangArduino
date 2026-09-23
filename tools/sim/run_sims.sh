@@ -2,7 +2,9 @@
 # Behavioural checks that don't need the FPGA flow or a board:
 #   - iverilog test benches for the Arduino-core gateware (tb_*.v here):
 #     systick counters, UART FIFOs, GPIO/LED set/clear registers, SPI
-#     modes against a spec-following slave model, WS2812 strip streaming.
+#     modes against a spec-following slave model, WS2812 strip streaming,
+#     and the CAN controller (three nodes on one bus, checked against
+#     reference bitstreams from gen_can_ref.py, an independent encoder).
 #   - host-compiled tests of the core's printf family and mem*() functions
 #     against glibc (host/*.c). The core sources are compiled for the host
 #     and their symbols prefixed with t_ (objcopy), so they can't collide
@@ -25,7 +27,7 @@ run_tb() {
   for f in "$@"; do srcs+=("$GW/$f"); done
   # Verilog-2005, as yosys reads it (gpio_bank.v names a block `bit`,
   # a SystemVerilog keyword).
-  if ! iverilog -g2005 -o "$OUT/$tb" "$SIM/$tb.v" "${srcs[@]}" >"$OUT/$tb.log" 2>&1; then
+  if ! iverilog -g2005 -I"$OUT" -o "$OUT/$tb" "$SIM/$tb.v" "${srcs[@]}" >"$OUT/$tb.log" 2>&1; then
     echo "  FAIL: $tb did not compile - $(head -1 "$OUT/$tb.log")"; FAIL=1; return
   fi
   local result
@@ -43,6 +45,11 @@ if command -v iverilog >/dev/null 2>&1; then
   run_tb tb_gpio gpio_bank.v tang_leds.v
   run_tb tb_spi spi_master.v
   run_tb tb_ws ws2812_strip.v
+  if python3 "$SIM/gen_can_ref.py" "$OUT/can_ref.vh"; then
+    run_tb tb_can can_ctrl.v
+  else
+    echo "  FAIL: gen_can_ref.py"; FAIL=1
+  fi
 else
   echo "  WARN: iverilog not found - skipping gateware test benches"
 fi

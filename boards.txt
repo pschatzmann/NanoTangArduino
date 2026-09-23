@@ -13,6 +13,7 @@ menu.flash_cache=Flash Cache
 menu.f_cpu=Clock Speed
 menu.compressed=Compressed Instructions
 menu.barrel_shifter=Barrel Shifter
+menu.can=CAN
 
 ## Sipeed Tang Nano 20K (PicoRV32 soft-SoC)
 ## ------------------------------------------
@@ -252,3 +253,12 @@ tangnano20k.menu.barrel_shifter.disabled=Disabled (Recommended)
 tangnano20k.menu.barrel_shifter.disabled.build.barrel_shifter=0
 tangnano20k.menu.barrel_shifter.enabled=Enabled (faster shifts)
 tangnano20k.menu.barrel_shifter.enabled.build.barrel_shifter=1
+
+# Tools > CAN. Disabled by default: synthesizes the CAN 2.0A/B controller
+# (gateware/src/can_ctrl.v) for libraries/CAN. Its TX/RX pins are chosen
+# at run time (CAN.setPins(), default GPIO18/GPIO11), so enabling it
+# claims no GPIO pin up front - only LUTs.
+tangnano20k.menu.can.disabled=Disabled (Recommended)
+tangnano20k.menu.can.disabled.build.can=0
+tangnano20k.menu.can.enabled=Enabled
+tangnano20k.menu.can.enabled.build.can=1
