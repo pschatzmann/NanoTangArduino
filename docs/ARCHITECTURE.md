@@ -138,7 +138,7 @@ Also set when the corresponding `Tools >` menu option is enabled (see
 | `0x8000_0128`                | External-interrupt LEVEL register (read-only)      |
 | `0x8000_0130`-`0x8000_013C`  | DMA SRC/DST/LEN/START registers (see [Peripherals](PERIPHERALS.md#dma)) |
 | `0x8000_0140`-`0x8000_015C`  | AI accelerator registers (see [Peripherals](PERIPHERALS.md#ai-accelerator)) |
-| `0x8000_0160`                | I2S IRQ_ENABLE: bit0=TX room, bit1=RX data (read/write, see [Peripherals](PERIPHERALS.md#audio-i2s)) |
+| `0x8000_0160`                | I2S IRQ_ENABLE: bit0=TX FIFO at most half full, bit1=RX data (read/write, see [Peripherals](PERIPHERALS.md#audio-i2s)) |
 | `0x8000_0164`                | I2S STATUS: bits[4:0]=TX FIFO free slots, bits[9:5]=RX FIFO count (read-only) |
 | `0x8000_0180`-`0x8000_01AC`  | PWM DUTY/CFG register pairs, 6 channels, each routable to any LED or GPIO pin (see `pwm_bank.v`) |
 | `0x8000_0170`-`0x8000_017C`  | PWM audio PERIOD/SAMPLE_DIV/DATA/CTRL (Tools > PWM Audio only - see [Peripherals](PERIPHERALS.md#audio-pwm)) |

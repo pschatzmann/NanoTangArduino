@@ -226,12 +226,15 @@ mirror, `I2S.readBytes((uint8_t*)frame, sizeof(frame));`, inherited from
 Both directions in `i2s.v` are backed by a 16-sample hardware FIFO
 (rather than a single-sample shadow register), plus a software ring
 buffer per direction (`libraries/I2S/src/I2S.cpp`, `ringSamples` deep,
-default `64`) that a dedicated interrupt keeps synchronized with the
-hardware FIFO in the background: `write()` pushes onto the software ring
-and arms the interrupt; an ISR drains it into the hardware FIFO as room
-appears, disarming itself once the ring is empty so an always-true
-"FIFO has room" hardware condition doesn't turn into a permanent
-interrupt storm. Receive mirrors this: the interrupt continuously fills
+default `512`, in internal SRAM - larger rings come from the much slower
+SDRAM heap) that a dedicated interrupt keeps synchronized with the
+hardware FIFO in the background. `write()` puts a sample straight into
+the hardware FIFO while nothing is queued and it has room; otherwise it
+pushes onto the software ring and arms the interrupt. The transmit
+interrupt fires when the hardware FIFO is at most half full, and the ISR
+refills it from the ring, disarming itself once the ring is empty. (An
+interrupt per sample, as in earlier versions, cost too much CPU time at
+27MHz: a 44.1kHz stream starved and came out silent.) Receive mirrors this: the interrupt continuously fills
 the software ring from the hardware FIFO whenever `mode` includes input,
 disarming itself if the ring fills up (freed again the next time
 `read()` pops a sample). This means a sketch can call `write()`/`read()`
@@ -275,8 +278,21 @@ page (sourced from the official datasheet's pinout table - see
 [General GPIO](#general-gpio)); `RX_DIN` doubles as `GPIO6` when Tools >
 I2S Input is left at its default, Disabled.
 
-The exact bit alignment of the frame follows the Philips/I2S convention but
-is unverified on real hardware and may need a one-`BCLK` tweak.
+Audio plays correctly through the onboard MAX98357A on real hardware. The
+frame follows the Philips/I2S convention; its exact bit alignment hasn't
+been measured with a logic analyzer.
+
+The CPU time budget matters at 27MHz: each 44.1kHz stereo sample leaves
+about 600 clock cycles for the sketch and the library together, and the
+CPU needs roughly 4 cycles per instruction. Write samples in blocks
+(e.g. 64 frames per `I2S.write()` call) rather than one at a time, keep
+per-sample work small (precompute tables, avoid divisions), and avoid
+`Serial` prints longer than about 32 characters while playing - they
+stall the CPU on the UART long enough to empty the FIFO (an audible
+click). For more headroom use a lower sample rate, a faster Tools > Clock
+Speed, or the Barrel Shifter and Hardware Multiply/Divide options.
+`I2S.availableForWrite()` reports how many samples can be written
+without blocking.
 
 ## Audio (PWM)
 
@@ -429,10 +445,9 @@ Enabling the menu doesn't change the gateware/bitstream at all -
 `libraries/SD` is pure software on top of the always-present SPI
 peripheral; the menu only gates whether `SD.h` compiles.
 
-Untested on real hardware, like everything else in this repo (see
-[Known limitations](KNOWN_LIMITATIONS.md)) - card detection, FAT parsing,
-and the SPI timing this library assumes have not been exercised against
-an actual card or the real gateware. See `libraries/SD/examples/SDReadWrite`.
+Tested on real hardware: initializing a card, writing a 2KB file and
+reading it back (see [Hardware test status](HARDWARE_STATUS.md)). See
+`libraries/SD/examples/SDReadWrite`.
 
 ## CAN
 
@@ -569,8 +584,9 @@ returning, so there's no way to interleave two instances' in-flight
 computations - one instance's `compute()` call fully finishes before
 another instance's can start. See `libraries/AIAccelerator/examples/AIAcceleratorMultiInstanceTest`.
 
-Untested on real hardware, like everything else in this repo - and more
-than most, since it also inherits NanoTangAI's own from-simulation-only
+Not yet tested on real hardware (see
+[Hardware test status](HARDWARE_STATUS.md)) - and less proven than most
+of this repo, since it also inherits NanoTangAI's own from-simulation-only
 status (see that project's README): its gateware has been checked
 bit-exact against a reference kernel in RTL simulation, but never
 synthesized or run on the actual chip.

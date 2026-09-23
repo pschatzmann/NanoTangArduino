@@ -18,18 +18,39 @@ static void i2sServiceIrqTrampoline(void)
  * actually succeeded (so a failed resize leaves the previous, working
  * buffers in place rather than leaking a null pointer). Returns false
  * if either allocation fails. */
+/* Rings up to I2S_SRAM_RING_SAMPLES live in these internal-SRAM buffers:
+ * single-cycle access, where the SDRAM heap costs 1-2us per word (the
+ * controller writes byte by byte). Measured on real hardware at 44.1kHz:
+ * with SDRAM rings the ring path alone used up the whole per-sample CPU
+ * budget, the ring never built up a reserve, and any pause in the sketch
+ * - a long Serial.print() stalling on the UART - emptied the hardware
+ * FIFO: an audible click. Larger rings still come from the heap. */
+static uint32_t sramTxRing[I2S_SRAM_RING_SAMPLES];
+static uint32_t sramRxRing[I2S_SRAM_RING_SAMPLES];
+
 bool I2SClass::allocateRings(uint16_t samples)
 {
-  uint32_t *newTx = (uint32_t *)malloc((size_t)samples * sizeof(uint32_t));
-  uint32_t *newRx = (uint32_t *)malloc((size_t)samples * sizeof(uint32_t));
-  if (!newTx || !newRx)
+  uint32_t *newTx, *newRx;
+  if (samples <= I2S_SRAM_RING_SAMPLES)
   {
-    free(newTx);
-    free(newRx);
-    return false;
+    newTx = sramTxRing;
+    newRx = sramRxRing;
   }
-  free((void *)txRing_);
-  free((void *)rxRing_);
+  else
+  {
+    newTx = (uint32_t *)malloc((size_t)samples * sizeof(uint32_t));
+    newRx = (uint32_t *)malloc((size_t)samples * sizeof(uint32_t));
+    if (!newTx || !newRx)
+    {
+      free(newTx);
+      free(newRx);
+      return false;
+    }
+  }
+  if (txRing_ != sramTxRing)
+    free((void *)txRing_);
+  if (rxRing_ != sramRxRing)
+    free((void *)rxRing_);
   txRing_ = newTx;
   rxRing_ = newRx;
   ringCapacity_ = samples;
@@ -107,13 +128,13 @@ void I2SClass::begin()
    * should start flowing into the ring buffer immediately whenever this
    * sketch might call read() - there's no "idle" concept for capture the
    * way there is for playback. */
-  TANGNANO20K_I2S_IRQEN_REG = (config_.mode != I2S_MODE_OUTPUT) ? TANGNANO20K_I2S_IRQEN_RX : 0;
+  setIrqEnable((config_.mode != I2S_MODE_OUTPUT) ? TANGNANO20K_I2S_IRQEN_RX : 0);
 }
 
 void I2SClass::end(void)
 {
   TANGNANO20K_I2S_CTRL_REG = 0;
-  TANGNANO20K_I2S_IRQEN_REG = 0;
+  setIrqEnable(0);
 }
 
 /* Converts `bytesPerSample_` little-endian bytes at the configured
@@ -200,6 +221,17 @@ void I2SClass::encodeSample(int16_t sample, uint8_t *bytes) const
  * versus i2s.v's own much shallower hardware FIFO alone. */
 void I2SClass::txRingPush(uint32_t sample)
 {
+  /* Fast path: nothing queued and room in the hardware FIFO - write the
+   * sample straight in. Going through the ring buffer and an interrupt
+   * per sample cost thousands of cycles each and kept the FIFO starved
+   * (about 5,700 samples/s at 27MHz, so a 44.1kHz stream came out silent
+   * - found on real hardware). No critical section needed: with the ring
+   * empty, serviceIrq() has nothing to write, and it never adds to it. */
+  if (txRingCount_ == 0 && TANGNANO20K_I2S_STATUS_TX_FREE(TANGNANO20K_I2S_STATUS_REG) > 0)
+  {
+    TANGNANO20K_I2S_DAT_REG = sample;
+    return;
+  }
   while (true)
   {
     uint32_t irqState = tangnano20k_irq_save();
@@ -207,9 +239,10 @@ void I2SClass::txRingPush(uint32_t sample)
     if (hasRoom)
     {
       txRing_[txRingHead_] = sample;
-      txRingHead_ = (uint16_t)((txRingHead_ + 1) % ringCapacity_);
+      txRingHead_ = nextIndex(txRingHead_);
       txRingCount_++;
-      TANGNANO20K_I2S_IRQEN_REG = TANGNANO20K_I2S_IRQEN_REG | TANGNANO20K_I2S_IRQEN_TX;
+      if (!(irqEnable_ & TANGNANO20K_I2S_IRQEN_TX))
+        setIrqEnable(irqEnable_ | TANGNANO20K_I2S_IRQEN_TX);
     }
     tangnano20k_irq_restore(irqState);
     if (hasRoom)
@@ -234,7 +267,7 @@ bool I2SClass::rxRingPop(uint32_t *sample)
   if (hasData)
   {
     *sample = rxRing_[rxRingTail_];
-    rxRingTail_ = (uint16_t)((rxRingTail_ + 1) % ringCapacity_);
+    rxRingTail_ = nextIndex(rxRingTail_);
     rxRingCount_--;
   }
   tangnano20k_irq_restore(irqState);
@@ -242,7 +275,7 @@ bool I2SClass::rxRingPop(uint32_t *sample)
   if (hasData && wasFull)
   {
     irqState = tangnano20k_irq_save();
-    TANGNANO20K_I2S_IRQEN_REG = TANGNANO20K_I2S_IRQEN_REG | TANGNANO20K_I2S_IRQEN_RX;
+    setIrqEnable(irqEnable_ | TANGNANO20K_I2S_IRQEN_RX);
     tangnano20k_irq_restore(irqState);
   }
   return hasData;
@@ -257,22 +290,45 @@ void I2SClass::serviceIrq(void)
   while (txFree > 0 && txRingCount_ > 0)
   {
     TANGNANO20K_I2S_DAT_REG = txRing_[txRingTail_];
-    txRingTail_ = (uint16_t)((txRingTail_ + 1) % ringCapacity_);
+    txRingTail_ = nextIndex(txRingTail_);
     txRingCount_--;
     txFree--;
   }
   if (txRingCount_ == 0)
-    TANGNANO20K_I2S_IRQEN_REG = TANGNANO20K_I2S_IRQEN_REG & ~TANGNANO20K_I2S_IRQEN_TX;
+    setIrqEnable(irqEnable_ & ~TANGNANO20K_I2S_IRQEN_TX);
 
   while (rxCount > 0 && rxRingCount_ < ringCapacity_)
   {
     rxRing_[rxRingHead_] = TANGNANO20K_I2S_DAT_RX_REG;
-    rxRingHead_ = (uint16_t)((rxRingHead_ + 1) % ringCapacity_);
+    rxRingHead_ = nextIndex(rxRingHead_);
     rxRingCount_++;
     rxCount--;
   }
   if (rxRingCount_ == ringCapacity_)
-    TANGNANO20K_I2S_IRQEN_REG = TANGNANO20K_I2S_IRQEN_REG & ~TANGNANO20K_I2S_IRQEN_RX;
+    setIrqEnable(irqEnable_ & ~TANGNANO20K_I2S_IRQEN_RX);
+}
+
+/* Whole frames of the common 16-bit format are converted directly;
+ * anything else (other bit depths, or a frame split across calls) goes
+ * through write(uint8_t) byte by byte. */
+size_t I2SClass::write(const uint8_t *buffer, size_t size)
+{
+  size_t done = 0;
+  if (bytesPerSample_ == 2 && config_.bits == 16)
+  {
+    size_t frameBytes = config_.channels * 2;
+    while (txFrameLen_ == 0 && size - done >= frameBytes)
+    {
+      const uint8_t *f = buffer + done;
+      int16_t left = (int16_t)(f[0] | (f[1] << 8));
+      int16_t right = (config_.channels == 2) ? (int16_t)(f[2] | (f[3] << 8)) : left;
+      txRingPush(((uint32_t)(uint16_t)left << 16) | (uint16_t)right);
+      done += frameBytes;
+    }
+  }
+  while (done < size)
+    write(buffer[done++]);
+  return size;
 }
 
 size_t I2SClass::write(uint8_t byte)

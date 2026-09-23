@@ -49,17 +49,25 @@ enum I2SBitsPerSample
  * 1 (mono) or 2 (stereo, the default); with 1, writes duplicate the
  * single sample onto both hardware channels, and reads only expose the
  * left channel. `bits` (8/16/24/32, default 16) is write()/read()'s
- * sample width - see I2SBitsPerSample. `ringSamples` (default 64) sets
+ * sample width - see I2SBitsPerSample. `ringSamples` (default 512) sets
  * the depth of each direction's software ring buffer - see the I2SClass
  * comment below; each sample costs 4 bytes, heap-allocated (this core's
  * heap is the embedded 8MB SDRAM - see docs/PERIPHERALS.md#heap--malloc). */
+/* Rings up to this many samples per direction use fast internal-SRAM
+ * buffers (4KB in total at the default, only in sketches using I2S);
+ * larger ones come from the SDRAM heap, which is much slower - see
+ * I2S.cpp's allocateRings(). */
+#ifndef I2S_SRAM_RING_SAMPLES
+#define I2S_SRAM_RING_SAMPLES 512
+#endif
+
 struct I2SConfig
 {
   unsigned long sampleRate = 44100;
   I2SMode mode = I2S_MODE_OUTPUT;
   uint8_t channels = 2;
   I2SBitsPerSample bits = I2S_BITS_16;
-  uint16_t ringSamples = 64;
+  uint16_t ringSamples = I2S_SRAM_RING_SAMPLES; // ~11.6ms at 44.1kHz of slack
 };
 
 /* Stereo (or mono) I2S to the onboard MAX98357A amplifier (transmit,
@@ -137,7 +145,11 @@ public:
 
   /* Stream/Print interface - see the class comment above. */
   size_t write(uint8_t byte) override;
+  size_t write(const uint8_t *buffer, size_t size) override;
   using Print::write;
+  // Samples (frames) that can be written without blocking: free space in
+  // the software ring buffer.
+  int availableForWrite(void) override { return (int)(ringCapacity_ - txRingCount_); }
   int available(void) override;
   int read(void) override;
   int peek(void) override;
@@ -174,6 +186,16 @@ private:
    * masked until retirq), so only mainline-vs-ISR races need guarding. */
   uint16_t ringCapacity_ = 0; // slots actually allocated, independent of config_
   volatile uint32_t *txRing_ = nullptr;
+  // Ring index + 1, wrapping - a compare instead of `% ringCapacity_`,
+  // which is a slow library call without hardware divide.
+  uint16_t nextIndex(uint16_t i) const { return (uint16_t)(i + 1 == ringCapacity_ ? 0 : i + 1); }
+
+  // i2s.v's IRQ_ENABLE register reads back as 0, so bits are changed via
+  // this copy - a read-modify-write of the register itself cleared the
+  // other direction's bit.
+  void setIrqEnable(uint32_t bits) { irqEnable_ = bits; TANGNANO20K_I2S_IRQEN_REG = bits; }
+  volatile uint32_t irqEnable_ = 0;
+
   volatile uint16_t txRingHead_ = 0; // next slot write(uint8_t) will fill
   volatile uint16_t txRingTail_ = 0; // next slot serviceIrq() will drain
   volatile uint16_t txRingCount_ = 0;

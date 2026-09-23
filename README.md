@@ -51,12 +51,16 @@ rather than a full FPGA rebuild - see
   floating-point is always software-emulated regardless)
 - 64KB internal SRAM
 
+**Tested on a real board** (September 2026): the CPU, `Serial`, the
+timers, the SDRAM heap, the SD card over SPI and I2S audio work; several
+other peripherals haven't been tried on hardware yet. See
+[Hardware test status](docs/HARDWARE_STATUS.md) for exactly what's
+verified, and the bugs the first hardware tests found. Everything else is
+verified in simulation (`tools/sim/`), synthesis, place & route and
+`arduino-cli compile` - see `tools/run_tests.sh`.
+
 See [Known limitations](docs/KNOWN_LIMITATIONS.md) for real gaps found
 while building this, and [Roadmap](docs/ROADMAP.md) for what's next.
-`gowin_pack` produces a real bitstream for the current design, but
-**nothing here has been run on real hardware yet** - everything is
-verified via `yosys`/`nextpnr-himbaechel` synthesis and place & route and
-`arduino-cli compile`; see `tools/run_tests.sh`.
 
 ## Board specifications
 
@@ -127,6 +131,8 @@ prerequisites, Tools menu options, and how to run the verification suite.
   card, heap/`malloc`, the AI accelerator, and clocking.
 - [Building, installing, and verifying](docs/BUILDING.md) — prerequisites,
   installing the board package, Tools menu options, and `tools/run_tests.sh`.
+- [Hardware test status](docs/HARDWARE_STATUS.md) — what's verified on a
+  real board, what isn't yet, and the bugs found there.
 - [Known limitations](docs/KNOWN_LIMITATIONS.md) — real, currently-blocking
   gaps (read this before attempting a real board build).
 - [Licensing](docs/LICENSING.md) — this repo mixes permissive, GPLv3, and

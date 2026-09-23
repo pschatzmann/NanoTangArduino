@@ -58,8 +58,11 @@
  * Second window, i2s_ext_sel (see top.v - a separate address decode from
  * i2s_sel above, reusing the same addr[3:0] offsets independently):
  *   irqen_sel  (offset 0x0, read/write) - bit0: raise i2s_irq_out
- *              whenever the transmit FIFO has room (i.e. a write would
- *              not block). bit1: raise i2s_irq_out whenever the receive
+ *              whenever the transmit FIFO is at most half full, so an ISR
+ *              refills at least FIFO_DEPTH/2 samples per interrupt (with
+ *              "any room" the interrupt fired once per sample, and its
+ *              entry/exit overhead left too little CPU time to keep up -
+ *              found on real hardware as audible gaps). bit1: raise i2s_irq_out whenever the receive
  *              FIFO has at least one sample (i.e. a read would not
  *              block). Both level-triggered, not sticky/edge-latched -
  *              the line simply tracks live FIFO occupancy, the same way
@@ -151,7 +154,7 @@ module i2s
 
    wire [4:0]         tx_fifo_free = FIFO_DEPTH[4:0] - tx_fifo_count;
 
-   assign i2s_irq_out = (tx_irq_enable && !tx_fifo_full) ||
+   assign i2s_irq_out = (tx_irq_enable && tx_fifo_count <= FIFO_DEPTH[4:0] / 2) ||
                          (rx_irq_enable && !rx_fifo_empty);
 
    /* Transmit-side writes are ready whenever there's FIFO room; a
@@ -162,6 +165,7 @@ module i2s
                        irqen_sel || status_sel;
    assign i2s_rdata = dat_rx_sel ? rx_fifo_mem[rx_fifo_rptr] :
                        status_sel ? {22'b0, rx_fifo_count, tx_fifo_free} :
+                       irqen_sel  ? {30'b0, rx_irq_enable, tx_irq_enable} :
                        32'h0;
 
    always @(posedge clk or negedge reset_n)

@@ -11,8 +11,10 @@
   need one yourself; override `compiler.path`/`compiler.prefix` in a
   `platform.local.txt` next to `platform.txt` if yours lives elsewhere or
   uses a different prefix (e.g. `riscv32-unknown-elf-`).
-- **yosys** (Verilog synthesis) — see the BRAM-inference caveat in
-  [Known limitations](KNOWN_LIMITATIONS.md) about version matching.
+- **yosys** (Verilog synthesis). Tested with 0.33, what Linux
+  distributions ship; its Gowin block-RAM mapping has a bug that
+  `tools/build_bitstream.py` corrects automatically (see
+  [Known limitations](KNOWN_LIMITATIONS.md)). Newer versions work too.
 - **nextpnr-himbaechel**, built with the Gowin backend, for place & route.
   Not all yosys/apicula installs include this by default — the easiest path
   is the [YosysHQ oss-cad-suite](https://github.com/YosysHQ/oss-cad-suite-build)
@@ -137,8 +139,9 @@ starting point for that, not a working `throw`/`catch` out of the box.
 ### Boot Mode
 
 See [Peripherals: Flash](PERIPHERALS.md#flash). **SRAM (default)** keeps
-the sketch baked directly into internal SRAM, resynthesizing on every
-upload. **Flash** boots a fixed stub that copies the sketch from the
+the sketch baked directly into internal SRAM; after the first build for a
+set of Tools options, a new sketch only takes seconds to build (see
+[Build times](#build-times-and-the-routed-design-cache)). **Flash** boots a fixed stub that copies the sketch from the
 onboard SPI flash instead, so `tools/upload.py` writes to flash rather
 than reprogramming the whole bitstream.
 
@@ -246,6 +249,31 @@ are chosen at run time, so it claims no GPIO pin up front.
 | Disabled (default) | `:can=disabled` |
 | Enabled | `:can=enabled` |
 
+## Build times and the routed-design cache
+
+With the default Tools > Boot Mode: SRAM, the sketch's program is baked
+into the FPGA's block RAM, so every upload is a new bitstream. But for a
+given set of Tools options the placed-and-routed design is the same for
+every sketch - only the RAM contents differ. So `tools/build_bitstream.py`
+caches the routed design:
+
+- The **first build** for a combination of Tools options runs the full
+  flow (synthesis, place & route, pack): typically 15-25 minutes.
+- **Every later build** with the same options only writes the new program
+  into the cached design and packs it: about **6 seconds** in total.
+
+The cache lives in `~/.cache/nanotang/routed/`, a few MB per option
+combination. Its key covers the gateware sources, the pin constraints,
+the Tools options, this package's version (so a new release always
+rebuilds), `build_bitstream.py` itself, and the yosys, nextpnr and
+apicula versions; deleting the directory is always safe. Set
+`NANOTANG_NO_ROUTED_CACHE=1` to force the full flow. Tools > Boot Mode:
+Flash has its own cache of the core bitstream, keyed the same way.
+
+Full builds write several hundred MB of intermediate files to the
+temporary directory. If `/tmp` is on a small partition, point `TMPDIR`
+somewhere with room, e.g. `TMPDIR=~/tmp arduino-cli compile ...`.
+
 ## FPGA resource usage
 
 How much of the GW2AR-18's logic each Tools option costs, from place &
@@ -314,8 +342,8 @@ tool is missing.
 
 Each FPGA build (synthesis, place & route, and pack) is the same as an
 actual upload in the default SRAM boot mode, and place & route alone can
-take 20 minutes or more, so a full run takes hours. This is the extent of verification
-possible without the physical board: it confirms the gateware elaborates/
-synthesizes, every example compiles and links, and (when nextpnr-himbaechel
-succeeds) that a real bitstream is produced - but it cannot confirm a
-bitstream programs correctly or that anything actually works once running.
+take 20 minutes or more, so a full run takes hours. This confirms the
+gateware elaborates and synthesizes, every example compiles and links,
+and a real bitstream is produced - but not that everything works on the
+chip: several real bugs only showed up there (see
+[Hardware test status](HARDWARE_STATUS.md)).

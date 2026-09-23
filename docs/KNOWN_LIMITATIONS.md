@@ -1,19 +1,18 @@
 # Known limitations
 
-- **`Serial` likely needs a different USB port selected than the one used
-  for uploading.** The onboard BL616 exposes both a JTAG/programming
-  interface and a UART bridge over the same USB cable (confirmed against
+- **`Serial` is the board's second USB serial port.** The onboard BL616
+  exposes both a JTAG/programming interface and a UART bridge over the
+  same USB cable (confirmed against
   [Sipeed's official schematic](https://dl.sipeed.com/shareURL/TANG/Nano_20K/2_Schematic):
   FPGA pin 69 (`uart_tx`) → `BL616_UART_RX`, pin 70 (`uart_rx`) ←
   `BL616_UART_TX` - the same pins
   [nand2mario/nestang](https://github.com/nand2mario/nestang) uses for
   its own console UART), which on most hosts enumerate as two separate
   serial devices (e.g. two `/dev/ttyACM*`/`/dev/ttyUSB*` entries on
-  Linux, two COM ports on Windows) - `tools/upload.py` targets the
-  programming one, and the Arduino Serial Monitor needs to be pointed at
-  the *other* one to see `Serial.print()`/`println()` output. Which of
-  the two is which isn't yet confirmed on real hardware - if the first
-  one you try shows nothing, try the other.
+  Linux, two COM ports on Windows). Confirmed on real hardware: the
+  first (`/dev/ttyUSB0`) is the JTAG/programming interface
+  `tools/upload.py` uses, the second (`/dev/ttyUSB1`) carries
+  `Serial` - point the Serial Monitor at that one.
 - **Data from the board to the PC gets lost while the PC is sending at the
   same time.** This is the onboard BL616 USB bridge (debugger firmware
   2025030317 on the tested board), not the FPGA: a test board streaming
@@ -84,6 +83,13 @@
   the CPU (including instruction fetch - picorv32 has no separate
   instruction bus) for the whole transfer.
 - No USB.
-- **Nothing here has been run on real hardware.** Everything is verified
-  only via `yosys` elaboration/synthesis and `arduino-cli compile`; see
-  `tools/run_tests.sh`.
+- **Only part of the core has been tested on real hardware so far** -
+  see [Hardware test status](HARDWARE_STATUS.md). Everything else is
+  verified in simulation, synthesis and `arduino-cli compile` (see
+  `tools/run_tests.sh`).
+- **yosys 0.33 (what Linux distributions ship) maps block RAMs so they
+  never return data on the real chip** (output enable `OCE` tied low).
+  `tools/build_bitstream.py` corrects this automatically after
+  synthesis, so nothing needs doing - but other flows using this
+  gateware with yosys 0.33 would need the same fix (see
+  `fix_bram_oce()`). Newer yosys versions (2024 onwards) are fine.

@@ -188,7 +188,7 @@
 #define PROGMEM FLASH_DATA
 
 #define TANGNANO20K_I2S_CTRL_PA_EN (1UL << 0)
-#define TANGNANO20K_I2S_IRQEN_TX   (1UL << 0) // TX FIFO has room
+#define TANGNANO20K_I2S_IRQEN_TX   (1UL << 0) // TX FIFO at most half full
 #define TANGNANO20K_I2S_IRQEN_RX   (1UL << 1) // RX FIFO has a sample
 #define TANGNANO20K_I2S_STATUS_TX_FREE(status)  ((status) & 0x1FUL)
 #define TANGNANO20K_I2S_STATUS_RX_COUNT(status) (((status) >> 5) & 0x1FUL)
