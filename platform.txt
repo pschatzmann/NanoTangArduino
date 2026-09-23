@@ -1,5 +1,5 @@
 name=Sipeed Tang Nano 20K (PicoRV32 SoC)
-version=0.1.1
+version=0.2.0
 
 # Path to the RISC-V toolchain: the Zephyr SDK's multilib
 # riscv64-zephyr-elf-gcc, which supports the rv32i2p0/ilp32 target our SoC
