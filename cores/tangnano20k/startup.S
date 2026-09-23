@@ -26,14 +26,18 @@ clear_bss_done:
 	la   a0, tangnano20k_irq_dispatch
 	sw   a0, 0x280(zero)
 
-	/* Run global constructors (C++ static init) */
-	la   a0, __init_array_start
-	la   a1, __init_array_end
+	/* Run global constructors (C++ static init). The loop state lives in
+	 * s0/s1, which the calling convention preserves across calls - an
+	 * earlier version used a0/a1, which any constructor may clobber, so
+	 * with more than one constructor the loop jumped to garbage before
+	 * main() (found on real hardware: any sketch using SD hung). */
+	la   s0, __init_array_start
+	la   s1, __init_array_end
 run_ctors:
-	bge  a0, a1, run_ctors_done
-	lw   a2, 0(a0)
+	bgeu s0, s1, run_ctors_done
+	lw   a2, 0(s0)
 	jalr ra, a2, 0
-	addi a0, a0, 4
+	addi s0, s0, 4
 	j    run_ctors
 run_ctors_done:
 
