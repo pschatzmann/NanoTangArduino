@@ -58,6 +58,7 @@ private:
   static const size_t kBufferSize = 32;
 
   volatile uint32_t &reg_;
+  uint32_t drive_ = 0; // Lines currently driven low - see Wire.cpp.
 
   void i2cStart(void);
   void i2cStop(void);

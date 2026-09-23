@@ -90,8 +90,15 @@ module gpio_bank
    genvar i;
    generate
      for (i = 0; i < WIDTH; i = i + 1) begin : bit
-       assign gpio[i] = override[i] ? override_value[i] :
-                        dir[i] ? out[i] : 1'bz;
+       /* Canonical `enable ? data : 1'bz` form, one per pin: yosys 0.33
+        * only turns that into a bidirectional IOBUF. The nested
+        * `override ? v : dir ? out : 1'bz` this used to be came out as a
+        * plain output buffer - the pin could never be read as an input
+        * (found on real hardware: pull-ups and inputs read 0, while
+        * reading back a pin's own output still worked). */
+       wire oe = override[i] | dir[i];
+       wire od = override[i] ? override_value[i] : out[i];
+       assign gpio[i] = oe ? od : 1'bz;
      end
    endgenerate
 

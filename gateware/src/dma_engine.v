@@ -72,6 +72,16 @@ module dma_engine
    reg [31:0] words_done;
    reg [31:0] hold_data;
    reg        busy;
+   /* Bus hand-over (found on real hardware, where blocking copies hung):
+    * - start_req: the CPU's START write must get its ctrl_ready before
+    *   this module takes the bus - top.v hides the CPU's mem_ready while
+    *   `active`, so taking the bus in the same cycle left the CPU
+    *   retrying the write after the transfer, which started it again.
+    * - releasing: one idle cycle with the bus still held after the last
+    *   access, so a slave that answers a cycle late (sram.v's registered
+    *   ready) can't hand its stale ready/data to the CPU's next access. */
+   reg        start_req;
+   reg        releasing;
    reg        phase; // 0 = reading src_addr[words_done], 1 = writing dst_addr[words_done]
 
    // ---- Async mode ----
@@ -93,6 +103,8 @@ module dma_engine
       if (!reset_n) begin
          busy            <= 1'b0;
          active          <= 1'b0;
+         start_req       <= 1'b0;
+         releasing       <= 1'b0;
          mem_valid       <= 1'b0;
          phase           <= 1'b0;
          a_busy          <= 1'b0;
@@ -123,19 +135,29 @@ module dma_engine
                           a_phase      <= 1'b0;
                        end
                     end else begin
-                       if (!busy && word_count != 0) begin
-                          busy       <= 1'b1;
-                          active     <= 1'b1;
-                          words_done <= 32'h0;
-                          phase      <= 1'b0;
-                       end
+                       if (!busy && !start_req && !releasing && word_count != 0)
+                          start_req <= 1'b1;
                     end
                  end else begin
-                    ctrl_rdata     <= {29'b0, a_done_pending, a_busy, busy};
+                    ctrl_rdata     <= {29'b0, a_done_pending, a_busy, busy | start_req | releasing};
                     a_done_pending <= 1'b0;
                  end
               end
             endcase
+         end
+
+         if (start_req) begin
+            // The START write was acknowledged last cycle; take the bus.
+            start_req  <= 1'b0;
+            busy       <= 1'b1;
+            active     <= 1'b1;
+            words_done <= 32'h0;
+            phase      <= 1'b0;
+         end
+
+         if (releasing) begin
+            releasing <= 1'b0;
+            active    <= 1'b0;
          end
 
          if (busy) begin
@@ -158,8 +180,8 @@ module dma_engine
                   phase      <= 1'b0;
                   words_done <= words_done + 1;
                   if (words_done + 1 == word_count) begin
-                     busy   <= 1'b0;
-                     active <= 1'b0;
+                     busy      <= 1'b0;
+                     releasing <= 1'b1; // `active` drops next cycle
                   end
                end
             end

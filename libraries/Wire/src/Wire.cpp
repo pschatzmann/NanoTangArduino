@@ -1,23 +1,32 @@
 #include "Wire.h"
 
+/* The register's bits mean "drive low" when written but read back the
+ * actual pin levels, so the drive state is kept in drive_ and never read
+ * back from the register. (Reading it back turned a released, high SCL
+ * into "drive SCL low" whenever SDA was changed - every I2C transfer
+ * failed and a scan "found" all 126 addresses; found on real hardware.) */
 void TwoWire::sdaLow(void)
 {
-  reg_ = TANGNANO20K_I2C_SDA_LOW | (reg_ & TANGNANO20K_I2C_SCL_LOW);
+  drive_ |= TANGNANO20K_I2C_SDA_LOW;
+  reg_ = drive_;
 }
 
 void TwoWire::sdaRelease(void)
 {
-  reg_ = reg_ & TANGNANO20K_I2C_SCL_LOW;
+  drive_ &= ~TANGNANO20K_I2C_SDA_LOW;
+  reg_ = drive_;
 }
 
 void TwoWire::sclLow(void)
 {
-  reg_ = TANGNANO20K_I2C_SCL_LOW | (reg_ & TANGNANO20K_I2C_SDA_LOW);
+  drive_ |= TANGNANO20K_I2C_SCL_LOW;
+  reg_ = drive_;
 }
 
 void TwoWire::sclRelease(void)
 {
-  reg_ = reg_ & TANGNANO20K_I2C_SDA_LOW;
+  drive_ &= ~TANGNANO20K_I2C_SCL_LOW;
+  reg_ = drive_;
   /* Clock stretching: a slave may hold SCL low; wait for it to actually
    * read back high before proceeding - up to the timeout. Once a transfer
    * has timed out, later steps skip the wait so it unwinds quickly. */
@@ -39,6 +48,7 @@ bool TwoWire::abandonIfTimedOut(void)
 {
   if (!aborted_)
     return false;
+  drive_ = 0;
   reg_ = 0;
   aborted_ = false;
   return true;
@@ -131,6 +141,7 @@ uint8_t TwoWire::i2cReadByte(bool ack)
 
 void TwoWire::begin(void)
 {
+  drive_ = 0;
   reg_ = 0; // Release both lines (idle high via pull-ups).
 }
 
@@ -141,6 +152,7 @@ void TwoWire::begin(uint8_t /*address*/)
 
 void TwoWire::end(void)
 {
+  drive_ = 0;
   reg_ = 0;
 }
 
