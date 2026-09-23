@@ -31,17 +31,23 @@ options (27MHz, Boot Mode: SRAM) and yosys 0.33, nextpnr-himbaechel
 | DMA | Blocking SRAM/SDRAM copies and a background SDRAM copy with its completion callback, data verified |
 | `Wire` (I2C) | A scan with nothing attached finds nothing and finishes in 35ms (no device tested yet) |
 | SDRAM, full 8MB | A pattern over every word: 0 errors |
+| PWM on the LEDs | LED1-LED5 fade smoothly ("breathing") with `analogWrite()` |
+| Onboard WS2812 LED | `WS2812.write()` shows red, green, blue and white correctly |
+| `tone()` with a duration | `tone(LED0, 2, 3000)` blinks twice a second and stops by itself |
+| CAN (Tools > CAN) | Internal loopback mode: frames sent and received back (no transceiver) |
+| Hardware Multiply/Divide | A benchmark runs correctly: integer division 9.5x, multiplication 19.6x and float math 1.6x faster than without |
 
 ## Not yet tested on the board
 
-- WS2812: onboard LED and external strips
+- WS2812 strips on a GPIO (the onboard LED works)
 - `Wire` talking to a real I2C device, and the second SPI/I2C bus
-- `SoftwareSerial` (needs a jumper wire), CAN, PWM Audio, I2S input
+- `SoftwareSerial` (needs a jumper wire), CAN on a real bus (needs a
+  transceiver), PWM Audio, I2S input
 - The AI accelerator (it builds and packs into a bitstream now, but hasn't run)
 - Tools > Boot Mode: Flash and `FLASH_DATA`: not tried, because they
   overwrite what's stored in the board's flash
-- The Compressed Instructions, Barrel Shifter and Hardware
-  Multiply/Divide options, and the 13.5/54MHz clocks
+- The Compressed Instructions and Barrel Shifter options, and the
+  13.5/54MHz clocks
 
 ## Bugs found on the board
 
