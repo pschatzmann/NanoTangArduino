@@ -14,7 +14,8 @@
 - **yosys** (Verilog synthesis). Tested with 0.33, what Linux
   distributions ship; its Gowin block-RAM mapping has a bug that
   `tools/build_bitstream.py` corrects automatically (see
-  [Known limitations](KNOWN_LIMITATIONS.md)). Newer versions work too.
+  [Architecture: gateware notes](ARCHITECTURE.md#gateware-notes)). Newer
+  versions work too.
 - **nextpnr-himbaechel**, built with the Gowin backend, for place & route.
   Not all yosys/apicula installs include this by default — the easiest path
   is the [YosysHQ oss-cad-suite](https://github.com/YosysHQ/oss-cad-suite-build)
@@ -44,7 +45,7 @@ arduino-cli core install nanotang:tangnano20k --additional-urls <url above>
 
 This installs the board files *and* a working RISC-V compiler (Linux
 x86_64, macOS Intel/Apple Silicon, or Windows 64-bit) with no other manual
-steps - skip ahead to [Tools menus](#tools-menus) below.
+steps.
 
 ## Installing manually (for development, or before a release exists)
 
@@ -69,185 +70,39 @@ recipe, which always targets the board via `openFPGALoader -b tangnano20k`.)
 
 ## Tools menus
 
-`boards.txt` exposes several Tools menus (in the IDE) / FQBN suffixes (on
+`boards.txt` exposes these Tools menus (in the IDE) / FQBN suffixes (on
 the CLI). Combine as many as needed, e.g.:
 
 ```sh
 arduino-cli compile --fqbn nanotang:tangnano20k:tangnano20k:optimize=fastest,sd_card=enabled libraries/SD/examples/SDReadWrite
 ```
 
-### Optimize
+Options that add gateware cost LUTs whether or not a sketch uses them
+(see [FPGA resource usage](#fpga-resource-usage)), so they're all off by
+default. The first build after changing any gateware option takes a full
+FPGA flow (see [Build times](#build-times-and-the-routed-design-cache)).
 
-Controls the compiler's optimization level - not just a speed/size
-tradeoff here, since the whole program has to fit in 64KB of internal SRAM:
-
-| Option | Flags | FQBN suffix |
+| Menu | FQBN key: values (default first) | What it does |
 |---|---|---|
-| Small (default) | `-Os` | `:optimize=small` |
-| Fast | `-O2` | `:optimize=fast` |
-| Fastest | `-O3` | `:optimize=fastest` |
-| Debug | `-Og -g` | `:optimize=debug` |
+| Optimize | `optimize`: `small` (`-Os`), `fast` (`-O2`), `fastest` (`-O3`), `debug` (`-Og -g`) | Compiler optimization. The whole program has to fit in 64KB of SRAM, so `-O2`/`-O3` can push a large sketch over; debug info costs no SRAM |
+| Clock Speed | `f_cpu`: `normal` (27MHz), `low_power` (13.5MHz), `overclock` (54MHz) | [Clock architecture](PERIPHERALS.md#clock-architecture) |
+| Boot Mode | `boot_mode`: `sram`, `flash` | Run the sketch from SRAM baked into the bitstream, or boot it from the onboard flash - see [Flash](PERIPHERALS.md#flash) |
+| SPI Buses / I2C Buses | `spi_buses`, `i2c_buses`: `one`, `none`, `two` | Remove the port, or add `SPI2` (GPIO0-3) / `Wire2` (GPIO4-5) - see [SPI, I2C](PERIPHERALS.md#spi-i2c-wire-and-the-sd-card) |
+| SD Card | `sd_card`: `disabled`, `enabled` | Allows `SD.h` to compile; it's GPLv3 - see [SD card](PERIPHERALS.md#sd-card). No gateware change |
+| I2S Input | `i2s_rx`: `disabled`, `enabled` | Microphone input on `GPIO6` - see [Audio (I2S)](PERIPHERALS.md#audio-i2s) |
+| PWM Audio | `pwm_audio`: `disabled`, `enabled` | Audio output on `GPIO16`/`GPIO17` - see [Audio (PWM)](PERIPHERALS.md#audio-pwm) |
+| CAN | `can`: `disabled`, `enabled` | CAN controller, pins chosen at run time - see [CAN](PERIPHERALS.md#can) |
+| AI Accelerator | `ai_accel`: `disabled`, `enabled` | INT8 dot-product engine - see [AI accelerator](PERIPHERALS.md#ai-accelerator) |
+| Flash Cache | `flash_cache`: `disabled`, `enabled` | 512-byte cache for flash reads - see [Flash](PERIPHERALS.md#flash) |
+| Hardware Multiply/Divide | `hw_muldiv`: `disabled`, `enabled` | RV32IM CPU and compiler flags, together - see [CPU features](PERIPHERALS.md#cpu-features) |
+| Compressed Instructions | `compressed`: `disabled`, `enabled` | RV32IC CPU and compiler flags, together - see [CPU features](PERIPHERALS.md#cpu-features) |
+| Barrel Shifter | `barrel_shifter`: `disabled`, `enabled` | Single-cycle shifts, gateware only - see [CPU features](PERIPHERALS.md#cpu-features) |
+| C++ Exceptions | `exceptions`: `disabled`, `enabled` | Compiles with `-fexceptions`, see below |
 
-`-g` debug info isn't part of what `tools/build_bitstream.py` bakes into
-SRAM (it lives outside the `.elf`'s loadable sections), so Debug doesn't
-cost SRAM budget - only `-O2`/`-O3`'s larger code does.
-
-### AI Accelerator
-
-Controls whether `gateware/src/ai_accel_bus.v` (see
-[AI accelerator](PERIPHERALS.md#ai-accelerator)) is synthesized into the
-bitstream at all - **disabled by default**. Unlike a software library,
-gateware isn't free just because a sketch doesn't call it: everything in
-`top.v` gets built into every bitstream, and this accelerator's 9
-memories + 128 multiply lanes are a real LUT/BRAM cost whether or not a
-sketch uses it.
-
-| Option | FQBN suffix |
-|---|---|
-| Disabled (default) | `:ai_accel=disabled` |
-| Enabled | `:ai_accel=enabled` |
-
-### SD Card
-
-Controls whether `libraries/SD/src/SD.h` compiles at all - **disabled by
-default**, for a different reason than AI Accelerator: `libraries/SD` is
-GPLv3 (see [Licensing](LICENSING.md)), and compiling it in makes your
-sketch's binary a GPLv3 derivative. Requiring this explicit menu choice,
-not just an `#include <SD.h>`, means that only happens when you've
-actually chosen it - enabling it doesn't change the gateware/bitstream at
-all.
-
-| Option | FQBN suffix |
-|---|---|
-| Disabled (default) | `:sd_card=disabled` |
-| Enabled (GPLv3) | `:sd_card=enabled` |
-
-### C++ Exceptions
-
-Passes `-fexceptions` instead of the default `-fno-exceptions`. **Disabled
-by default, and not a "just flip it on" toggle even when enabled**: this
-core is `-nostdlib` with no libsupc++/libstdc++, so `__cxa_throw`,
-`_Unwind_Resume`, and `__gxx_personality_v0` are still unresolved unless
-you bring your own freestanding C++ runtime support. This menu exists as a
-starting point for that, not a working `throw`/`catch` out of the box.
-
-| Option | FQBN suffix |
-|---|---|
-| Disabled (default) | `:exceptions=disabled` |
-| Enabled | `:exceptions=enabled` |
-
-### Boot Mode
-
-See [Peripherals: Flash](PERIPHERALS.md#flash). **SRAM (default)** keeps
-the sketch baked directly into internal SRAM; after the first build for a
-set of Tools options, a new sketch only takes seconds to build (see
-[Build times](#build-times-and-the-routed-design-cache)). **Flash** boots a fixed stub that copies the sketch from the
-onboard SPI flash instead, so `tools/upload.py` writes to flash rather
-than reprogramming the whole bitstream.
-
-| Option | FQBN suffix |
-|---|---|
-| SRAM (default) | `:boot_mode=sram` |
-| Flash | `:boot_mode=flash` |
-
-### SPI Buses / I2C Buses
-
-See [Peripherals: SPI, I2C (Wire), and the SD card](PERIPHERALS.md#a-second-spi--i2c-port).
-Independent menus, each defaulting to **One** - the original,
-always-present primary port. **None** removes that port's gateware
-entirely (saves LUTs; `SPI`/`Wire`, and anything built on them like `SD`,
-silently read back 0/no-op instead of hanging). **Two** adds a second,
-independent port (`SPI2` on GPIO0-3, `Wire2` on GPIO4-5), removing those
-pins from the general-purpose GPIO pool.
-
-| Option | FQBN suffix |
-|---|---|
-| None | `:spi_buses=none` / `:i2c_buses=none` |
-| One (default) | `:spi_buses=one` / `:i2c_buses=one` |
-| Two | `:spi_buses=two` / `:i2c_buses=two` |
-
-### Hardware Multiply/Divide
-
-See [Peripherals: CPU features](PERIPHERALS.md#cpu-features).
-**Disabled by default** - enabling it switches the compiler to
-`-march=rv32im_zicsr_zifencei` and picorv32 to real hardware
-multiply/divide, together. Never mix a binary built with one setting
-against a bitstream built with the other.
-
-| Option | FQBN suffix |
-|---|---|
-| Disabled (default) | `:hw_muldiv=disabled` |
-| Enabled | `:hw_muldiv=enabled` |
-
-### I2S Input
-
-See [Peripherals: Audio (I2S)](PERIPHERALS.md#audio-i2s). **Disabled by
-default** - enabling it wires `GPIO6` to the I2S peripheral's receive
-input for an external microphone, removing that pin from the
-general-purpose GPIO pool.
-
-| Option | FQBN suffix |
-|---|---|
-| Disabled (default) | `:i2s_rx=disabled` |
-| Enabled | `:i2s_rx=enabled` |
-
-### PWM Audio
-
-See [Peripherals: Audio (PWM)](PERIPHERALS.md#audio-pwm). **Disabled by
-default** - enabling it synthesizes the PWM audio peripheral onto
-`GPIO16` (left) and `GPIO17` (right), removing both pins from the
-general-purpose GPIO pool.
-
-| Option | FQBN suffix |
-|---|---|
-| Disabled (default) | `:pwm_audio=disabled` |
-| Enabled | `:pwm_audio=enabled` |
-
-### Flash Cache
-
-See [Peripherals: Flash](PERIPHERALS.md#flash). **Disabled by default** -
-enabling it adds a 512-byte read cache in front of the onboard flash
-(faster `FLASH_DATA`/`PROGMEM` reads and flash boot) at a cost of ~1,700
-LUT4s.
-
-| Option | FQBN suffix |
-|---|---|
-| Disabled (default) | `:flash_cache=disabled` |
-| Enabled | `:flash_cache=enabled` |
-
-### Compressed Instructions
-
-See [Peripherals: CPU features](PERIPHERALS.md#cpu-features). **Disabled
-by default** - enabling it builds the CPU with the RISC-V "C" extension
-and compiles with a matching `-march`, for about 18% smaller code at the
-cost of some LUTs.
-
-| Option | FQBN suffix |
-|---|---|
-| Disabled (default) | `:compressed=disabled` |
-| Enabled | `:compressed=enabled` |
-
-### Barrel Shifter
-
-See [Peripherals: CPU features](PERIPHERALS.md#cpu-features). **Disabled
-by default** - enabling it makes every shift single-cycle, for a few
-hundred LUTs. Gateware only; the compiler flags don't change.
-
-| Option | FQBN suffix |
-|---|---|
-| Disabled (default) | `:barrel_shifter=disabled` |
-| Enabled | `:barrel_shifter=enabled` |
-
-### CAN
-
-See [Peripherals: CAN](PERIPHERALS.md#can). **Disabled by default** -
-enabling it synthesizes the CAN controller for `libraries/CAN`. Its pins
-are chosen at run time, so it claims no GPIO pin up front.
-
-| Option | FQBN suffix |
-|---|---|
-| Disabled (default) | `:can=disabled` |
-| Enabled | `:can=enabled` |
+**C++ Exceptions** is a starting point, not a working `throw`/`catch`:
+this core is `-nostdlib` with no libsupc++/libstdc++, so `__cxa_throw`,
+`_Unwind_Resume` and `__gxx_personality_v0` stay unresolved unless you
+bring your own freestanding C++ runtime support.
 
 ## Build times and the routed-design cache
 
@@ -332,10 +187,11 @@ options, not on the sketch, so it runs once per distinct option
 combination the examples use, and prints nextpnr's device utilization for
 each.
 
-`tools/sim/run_sims.sh` (also run on its own in seconds) simulates the
-Arduino-core gateware with iverilog - systick counters, UART FIFOs,
+`tools/sim/run_sims.sh` (also run on its own in a few minutes) simulates
+the Arduino-core gateware with iverilog - systick counters, UART FIFOs,
 GPIO/LED set/clear registers, SPI in all four modes against a
-spec-following slave model, WS2812 strip streaming - and tests the core's
+spec-following slave model, WS2812 strip streaming, the SDRAM bus under
+refresh, and the CAN controller against reference bitstreams - and tests the core's
 `printf` family and `mem*()` functions against glibc on the host. Needs
 `iverilog` and a host `gcc`; each part is skipped with a warning if the
 tool is missing.
@@ -345,5 +201,6 @@ actual upload in the default SRAM boot mode, and place & route alone can
 take 20 minutes or more, so a full run takes hours. This confirms the
 gateware elaborates and synthesizes, every example compiles and links,
 and a real bitstream is produced - but not that everything works on the
-chip: several real bugs only showed up there (see
-[Hardware test status](HARDWARE_STATUS.md)).
+chip: several real bugs only showed up there. See
+[Hardware test status](HARDWARE_STATUS.md) for what has been verified on
+a board.

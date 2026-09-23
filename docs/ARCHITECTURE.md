@@ -8,6 +8,7 @@ sketch.ino ──arduino-cli/IDE──> RISC-V ELF (cores/tangnano20k + api/)
                     elf → bin → SRAM $readmemh init files
                                       │
                  yosys → nextpnr-himbaechel → gowin_pack
+                 (or: program patched into a cached routed design → gowin_pack)
                                       │
                                   prog.fs
                                       │
@@ -43,19 +44,15 @@ sketch.ino ──arduino-cli/IDE──> RISC-V ELF (cores/tangnano20k + api/)
   [arduino/ArduinoCore-API](https://github.com/arduino/ArduinoCore-API)
   (vendored under `cores/tangnano20k/api/` — see
   [Updating the vendored ArduinoCore-API](UPDATING_ARDUINOCORE_API.md)).
-- `libraries/` — bundled, opt-in libraries (`SPI`, `Wire`, `I2S`, `SD`,
-  `AIAccelerator`, `WS2812`, `TangTimer`, `DMA`, `SoftwareSerial`), the
-  same pattern real Arduino cores (AVR, ESP32, ...) use: a sketch only
-  links one in if it does `#include <SPI.h>` / `#include <Wire.h>` /
-  `#include <I2S.h>` / `#include <SD.h>` / `#include <AIAccelerator.h>` /
-  `#include <TangTimer.h>` / `#include <DMA.h>` /
-  `#include <SoftwareSerial.h>`, same as on any other board - keeping
-  `Blink` and similar sketches from linking in
-  SPI/I2C/I2S/etc. code they never call.
+- `libraries/` — bundled libraries (`SPI`, `Wire`, `I2S`, `PWMAudio`,
+  `SD`, `CAN`, `AIAccelerator`, `WS2812`, `Servo`, `TangTimer`, `DMA`,
+  `SoftwareSerial`), plus `Core` for the core's own examples. As on other
+  Arduino cores, a sketch only links in the ones it `#include`s.
 - `variants/tangnano20k/` — pin definitions.
 - `tools/` — the FPGA build (`build_bitstream.py`), SRAM-init generation
   (`gen_mem_init.py`), upload (`upload.py`), ArduinoCore-API vendoring
-  (`vendor_arduino_api.sh`), and verification (`run_tests.sh`) scripts.
+  (`vendor_arduino_api.sh`), verification (`run_tests.sh`, `sim/`) and
+  release packaging (`package/`) scripts.
 - `boards.txt` / `platform.txt` — the Arduino board definition.
 
 ## Preprocessor defines
@@ -140,7 +137,43 @@ Also set when the corresponding `Tools >` menu option is enabled (see
 | `0x8000_0140`-`0x8000_015C`  | AI accelerator registers (see [Peripherals](PERIPHERALS.md#ai-accelerator)) |
 | `0x8000_0160`                | I2S IRQ_ENABLE: bit0=TX FIFO at most half full, bit1=RX data (read/write, see [Peripherals](PERIPHERALS.md#audio-i2s)) |
 | `0x8000_0164`                | I2S STATUS: bits[4:0]=TX FIFO free slots, bits[9:5]=RX FIFO count (read-only) |
-| `0x8000_0180`-`0x8000_01AC`  | PWM DUTY/CFG register pairs, 6 channels, each routable to any LED or GPIO pin (see `pwm_bank.v`) |
 | `0x8000_0170`-`0x8000_017C`  | PWM audio PERIOD/SAMPLE_DIV/DATA/CTRL (Tools > PWM Audio only - see [Peripherals](PERIPHERALS.md#audio-pwm)) |
+| `0x8000_0180`-`0x8000_01AC`  | PWM DUTY/CFG register pairs, 6 channels, each routable to any LED or GPIO pin (see `pwm_bank.v`) |
 | `0x1000_0000`-`0x107f_ffff`  | Embedded SDRAM, 8MB (heap - see [Peripherals](PERIPHERALS.md#heap--malloc)) |
 | `0x2000_0000`-`0x207f_ffff`  | Onboard SPI flash, memory-mapped read-only (boot/constant data - see [Peripherals](PERIPHERALS.md#flash)) |
+
+## Gateware notes
+
+Toolchain details that matter when changing the gateware:
+
+- **yosys 0.33 (what Linux distributions ship) maps block RAMs so they
+  never return data on the real chip**: it ties each block RAM's output
+  clock enable (`OCE`) low. `tools/build_bitstream.py` drives `OCE` from
+  the read enable after synthesis (`fix_bram_oce()`); other flows using
+  this gateware with yosys 0.33 need the same fix. Newer yosys versions
+  (2024 onwards) are fine.
+- **Bidirectional pins must use the plain `assign pin = en ? d : 1'bz;`
+  form.** yosys 0.33 builds an output-only buffer from anything more
+  nested, and the pin can then never be read.
+- **`gateware/src/sram8bit.v`'s memory needs its `(* ram_style = "block"
+  *)` attribute** to map onto block RAM; without it yosys picks LUT-based
+  distributed RAM, which doesn't fit.
+- **A memory's ready signal must pulse once per access.** picorv32 with
+  Compressed Instructions keeps `mem_valid` high and moves straight on to
+  the next address for the second half of an unaligned 32-bit
+  instruction; a ready that simply follows the select signal hands it the
+  previous word.
+- **The embedded SDRAM's pins are placed by name**: nextpnr's Gowin
+  backend recognizes the top-level ports `O_sdram_clk`, `O_sdram_cke`,
+  `O_sdram_cs_n`, `O_sdram_cas_n`, `O_sdram_ras_n`, `O_sdram_wen_n`,
+  `O_sdram_dqm[3:0]`, `O_sdram_addr[10:0]`, `O_sdram_ba[1:0]` and
+  `IO_sdram_dq[31:0]` (see
+  [YosysHQ/nextpnr#1370](https://github.com/YosysHQ/nextpnr/pull/1370));
+  they aren't in the `.cst` file. Renaming them breaks place & route with
+  `ERROR: Unconstrained IO:...`.
+- **Tools > Boot Mode: Flash caches one bitstream per option
+  combination**, which only works because the core's SRAM image is
+  identical for every sketch: `irq_vec.S` calls the sketch's interrupt
+  dispatcher through a fixed pointer slot (`irq_dispatch_ptr`) rather than
+  a direct call, whose encoding would depend on where the dispatcher
+  links.

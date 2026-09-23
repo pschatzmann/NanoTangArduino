@@ -1,9 +1,9 @@
 # Roadmap
 
-- **Test the remaining peripherals on real hardware** - see the list in
-  [Hardware test status](HARDWARE_STATUS.md): GPIO/PWM, interrupts and
-  timers, WS2812, I2C, SoftwareSerial, DMA, CAN, PWM Audio, the AI
-  accelerator, Flash boot, and the CPU/clock options.
+- **Test what's still untested on real hardware** - see
+  [Hardware test status](HARDWARE_STATUS.md#not-yet-tested-on-the-board).
+- **Math library functions** (`sin()`, `sqrt()`, ...) - see
+  [Known limitations](KNOWN_LIMITATIONS.md).
 - **Verify the I2S frame's exact bit alignment** against the MAX98357A
   with a logic analyzer - audio plays correctly by ear, but the
   alignment hasn't been measured.
@@ -17,7 +17,7 @@
   about as much CPU time as the sample period allows at 27MHz; a DMA feed
   from memory, or a cheaper interrupt path, would let long `Serial` prints
   coexist with audio.
-- **Slim down the CAN controller** (about 2,200 LUT4s after the first
+- **Slim down the CAN controller** (about 2,500 LUT4s after the first
   round of optimization).
 - **True XIP** (executing directly from flash, not just copying the
   program to SRAM at boot) needs an instruction cache to avoid a severe

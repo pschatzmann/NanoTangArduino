@@ -1,5 +1,9 @@
 # Peripherals
 
+What each API does and how it maps to the gateware and pins. What has
+been tried on a real board is listed in
+[Hardware test status](HARDWARE_STATUS.md).
+
 ## Serial and `printf`
 
 `Serial` runs over the onboard BL616's USB-UART bridge (8N1 only; see
@@ -201,9 +205,8 @@ duplex regardless of which `mode` was passed - there's no separate
 hardware mode to switch into. `channels` is `1` (mono) or `2` (stereo,
 the default); with `1`, writes duplicate the sample onto both hardware
 channels and reads only expose the left channel. `ringSamples` (default
-`64`) sets the depth of each direction's software ring buffer - see
-"Buffering and interrupts" below; it's heap-allocated (4 bytes/sample,
-from this core's SDRAM heap), and `I2S.ringSamples()` reports the size
+`512`) sets the depth of each direction's software ring buffer - see
+"Buffering and interrupts" below; `I2S.ringSamples()` reports the size
 actually in effect if an oversized request fell back to a smaller one.
 `I2S.config()` returns the full configuration actually in effect.
 
@@ -226,23 +229,22 @@ mirror, `I2S.readBytes((uint8_t*)frame, sizeof(frame));`, inherited from
 Both directions in `i2s.v` are backed by a 16-sample hardware FIFO
 (rather than a single-sample shadow register), plus a software ring
 buffer per direction (`libraries/I2S/src/I2S.cpp`, `ringSamples` deep,
-default `512`, in internal SRAM - larger rings come from the much slower
-SDRAM heap) that a dedicated interrupt keeps synchronized with the
+4 bytes per sample; up to 512 samples live in internal SRAM, larger rings
+come from the much slower SDRAM heap) that a dedicated interrupt keeps synchronized with the
 hardware FIFO in the background. `write()` puts a sample straight into
 the hardware FIFO while nothing is queued and it has room; otherwise it
 pushes onto the software ring and arms the interrupt. The transmit
 interrupt fires when the hardware FIFO is at most half full, and the ISR
-refills it from the ring, disarming itself once the ring is empty. (An
-interrupt per sample, as in earlier versions, cost too much CPU time at
-27MHz: a 44.1kHz stream starved and came out silent.) Receive mirrors this: the interrupt continuously fills
+refills it from the ring, disarming itself once the ring is empty.
+Receive mirrors this: the interrupt continuously fills
 the software ring from the hardware FIFO whenever `mode` includes input,
 disarming itself if the ring fills up (freed again the next time
 `read()` pops a sample). This means a sketch can call `write()`/`read()`
 in bursts, or skip a few `loop()` iterations doing other work, without
 needing to hit the exact sample rate every time - up to `ringSamples`
 (plus the hardware FIFO's own 16) of slack in either direction; raise it
-in `I2SConfig` for a sketch with bursty timing, or lower it to save SDRAM
-heap if `loop()` is reliably fast and regular. `available()` is
+in `I2SConfig` for a sketch with bursty timing, or lower it to save
+memory if `loop()` is reliably fast and regular. `available()` is
 genuinely non-blocking, reporting exactly what's already been captured
 in the background rather than assuming more is always imminent.
 
@@ -278,9 +280,7 @@ page (sourced from the official datasheet's pinout table - see
 [General GPIO](#general-gpio)); `RX_DIN` doubles as `GPIO6` when Tools >
 I2S Input is left at its default, Disabled.
 
-Audio plays correctly through the onboard MAX98357A on real hardware. The
-frame follows the Philips/I2S convention; its exact bit alignment hasn't
-been measured with a logic analyzer.
+The frame follows the Philips/I2S convention.
 
 The CPU time budget matters at 27MHz: each 44.1kHz stereo sample leaves
 about 600 clock cycles for the sketch and the library together, and the
@@ -341,10 +341,7 @@ effect at the start of a PWM period, so no pulse is ever cut short. See
 ## SPI, I2C (`Wire`), and the SD card
 
 The primary SPI and I2C **share the onboard microSD card slot's bus
-pins** — use at most one of them at a time. This was a deliberate
-tradeoff: those are the only pins on this board I could confirm the exact
-FPGA pin numbers for from Sipeed's schematic without risking an unsafe
-guess (see [Known limitations](KNOWN_LIMITATIONS.md)).
+pins** — use at most one of them at a time.
 
 Both are present by default but independently configurable via
 **Tools > SPI Buses** / **Tools > I2C Buses** (0/1/2 each - see
@@ -355,8 +352,7 @@ Both are present by default but independently configurable via
   0/no-op instead of talking to real hardware - the same "claim the
   address, answer with 0" pattern this core uses for every other
   menu-gated peripheral, rather than hanging.
-- **One** (Recommended, the default): the original, always-present
-  primary port, unchanged from every prior version of this core.
+- **One** (the default): the primary port on the microSD slot's pins.
 - **Two**: adds a second, independent port on general-purpose GPIO - see
   below.
 
@@ -403,8 +399,7 @@ instead.
 ### A second SPI + I2C port
 
 Select **Tools > SPI Buses: Two** and/or **Tools > I2C Buses: Two**
-(independent of each other - they use non-overlapping pins, unlike what a
-single combined "Extra SPI/I2C" toggle used to imply) for a second, fully
+(independent of each other - they use non-overlapping pins) for a second, fully
 independent SPI and/or I2C port - `SPI2`/`Wire2` (see the table above),
 same `TangNanoSPIClass`/`TwoWire` API as the first port, backed by a
 second instance of the same `spi_master.v`/`od_gpio2.v` gateware. This
@@ -412,16 +407,15 @@ board has only one dedicated SPI/I2C-capable bus (the microSD slot's pins
 used above), so the second port runs on general-purpose GPIO instead.
 Selecting **Two** permanently removes those specific GPIO pins (0-3 for
 SPI, 4-5 for I2C) from the general-purpose GPIO pool (see
-[General GPIO](#general-gpio)) - same tradeoff as AI Accelerator's
-LUT/BRAM cost, but for GPIO pins instead. See `libraries/SPI/examples/ExtraSPII2CTest`.
+[General GPIO](#general-gpio)). See `libraries/SPI/examples/ExtraSPII2CTest`.
 
 ### SD card
 
 `#include <SD.h>` (`libraries/SD/`, plus `#include <SPI.h>`) **and**
 select **Tools > SD Card: Enabled (GPLv3)** - unlike every other library
 in this repo, `SD.h` won't compile (a deliberate `#error`) unless you've
-explicitly made that menu choice; see [Tools menus](BUILDING.md#tools-menus)
-for why. This is the real [arduino-libraries/SD](https://github.com/arduino-libraries/SD)
+explicitly made that menu choice, because linking it in makes your
+sketch's binary a GPLv3 derivative. This is the real [arduino-libraries/SD](https://github.com/arduino-libraries/SD)
 (**GPLv3** - see [Licensing](LICENSING.md)) talking to the onboard microSD slot
 over the `SPI` library above, in standard SD-over-SPI mode - the same
 electrical wiring the slot actually uses. Call `SD.begin(SS)`.
@@ -445,9 +439,7 @@ Enabling the menu doesn't change the gateware/bitstream at all -
 `libraries/SD` is pure software on top of the always-present SPI
 peripheral; the menu only gates whether `SD.h` compiles.
 
-Tested on real hardware: initializing a card, writing a 2KB file and
-reading it back (see [Hardware test status](HARDWARE_STATUS.md)). See
-`libraries/SD/examples/SDReadWrite`.
+See `libraries/SD/examples/SDReadWrite`.
 
 ## CAN
 
@@ -502,11 +494,9 @@ FIFO into a 32-frame software buffer from an interrupt (`irq[7]`), so
 frames, and `txErrorCount()`/`rxErrorCount()`/`isErrorPassive()`/
 `isBusOff()` expose the error state.
 
-This is verified in simulation only (`tools/sim/tb_can.v`: three
-controllers on one bus, checked against reference bitstreams from an
-independent encoder, covering arbitration, errors, bus-off and loopback).
-It hasn't run against real CAN hardware yet. See
-`libraries/CAN/examples/CANSendReceive`.
+`tools/sim/tb_can.v` checks three controllers on one bus against
+reference bitstreams from an independent encoder, covering arbitration,
+errors, bus-off and loopback. See `libraries/CAN/examples/CANSendReceive`.
 
 ## Heap / `malloc`
 
@@ -527,9 +517,8 @@ heap unless we provide one) — backed by that 8MB region. The internal
 ## AI accelerator
 
 `#include <AIAccelerator.h>` (`libraries/AIAccelerator/`), select
-**Tools > AI Accelerator: Enabled** (see [Tools menus](BUILDING.md#tools-menus) -
-it's disabled by default, since unlike a software library it has a real
-gateware cost whether or not a sketch uses it).
+**Tools > AI Accelerator: Enabled** (disabled by default for its LUT and
+block RAM cost).
 
 This is the compute engine from the standalone
 [NanoTangAI](https://github.com/pschatzmann/NanoTangAI) project (same
@@ -584,12 +573,7 @@ returning, so there's no way to interleave two instances' in-flight
 computations - one instance's `compute()` call fully finishes before
 another instance's can start. See `libraries/AIAccelerator/examples/AIAcceleratorMultiInstanceTest`.
 
-Not yet tested on real hardware (see
-[Hardware test status](HARDWARE_STATUS.md)) - and less proven than most
-of this repo, since it also inherits NanoTangAI's own from-simulation-only
-status (see that project's README): its gateware has been checked
-bit-exact against a reference kernel in RTL simulation, but never
-synthesized or run on the actual chip.
+In RTL simulation the gateware matches a reference kernel bit for bit.
 
 ## Interrupts
 
@@ -600,8 +584,8 @@ execution starts at `PROGADDR_RESET=0x400` instead of `0x000` — see
 `cores/tangnano20k/link_cmd.ld`. This is adapted directly from
 [YosysHQ/picorv32](https://github.com/YosysHQ/picorv32)'s own official
 `firmware/start.S`/`custom_ops.S` non-QREGS register save/restore sequence
-and custom-0 opcode encodings (public domain) rather than hand-derived, since
-there's no hardware here yet to verify a mistake against.
+and custom-0 opcode encodings (public domain). `init()` enables
+interrupts before `setup()` runs, as on other Arduino cores.
 
 - `interrupts()`/`noInterrupts()` mask/unmask **all** maskable IRQ lines via
   picorv32's `maskirq` instruction (`cores/tangnano20k/irq_asm.S`) — like
@@ -617,10 +601,9 @@ there's no hardware here yet to verify a mistake against.
   sticky per-pin flag, driving picorv32's `irq[3]`; software classifies
   the edge direction by comparing the latched level against what it saw
   last time.
-- `tone(pin, frequency, duration)`/`noTone(pin)` toggle `pin` from a
-  repeating software timer (see below) — no dedicated gateware, since
-  picorv32's own countdown timer is enough to hit useful audible
-  frequencies.
+- `tone(pin, frequency, duration)`/`noTone(pin)` use a PWM channel (see
+  [Digital I/O and PWM](#digital-io-and-pwm)) and a software timer to end
+  the tone.
 - `#include <TangTimer.h>` (`libraries/TangTimer/`) — a general-purpose
   one-shot/repeating callback timer: `TangTimer t; t.begin(callback,
   interval_us, repeat);`. Runs the callback in interrupt context, same as
@@ -742,9 +725,10 @@ boot the bitstream itself) is memory-mapped read-only at
 
 ### Boot Mode (Tools menu)
 
-- **SRAM (default)**: the sketch is baked directly into internal SRAM at
-  synthesis time, exactly as every other peripheral in this core assumes.
-  Every upload re-runs the full FPGA flow.
+- **SRAM (default)**: the sketch is part of the bitstream, as the initial
+  contents of the internal SRAM. Each upload is a new bitstream (seconds
+  to build once the routed design is cached - see
+  [Build times](BUILDING.md#build-times-and-the-routed-design-cache)).
 - **Flash**: `cores/tangnano20k/boot.S`, a fixed stub baked into SRAM as
   part of the *core* (not the sketch), copies the sketch's program from
   the flash's program partition into SRAM at `0x400` on reset, then jumps
@@ -796,31 +780,40 @@ mode. See `libraries/Core/examples/FlashDataTest`.
 
 ## CPU features
 
-**Tools > Hardware Multiply/Divide** (disabled by default) enables
-picorv32's real M-extension (`ENABLE_MUL`/`ENABLE_DIV`/`ENABLE_FAST_MUL`
-in `top.v`) instead of software-emulated integer multiply/divide. This
-speeds up every integer `*`/`/`/`%` in a sketch, and indirectly speeds up
-`float`/`double` math too, since libgcc's software floating-point
-routines are themselves built from integer multiplies and shifts - see
-[Known limitations](KNOWN_LIMITATIONS.md) for why floating-point itself
-is always software-emulated regardless (picorv32 has no FPU option at
-all). The compiler flag (the `m` in `-march=rv32im_zicsr_zifencei`) and the
+All three are disabled by default. Measured on the board with a
+benchmark (20,000 operations each, 27MHz):
+
+| | Integer divide | Integer multiply | `float` math | Shifts |
+|---|---|---|---|---|
+| Default | 567ms | 611ms | 1,516ms | 42ms |
+| Hardware Multiply/Divide | 9.5x faster | 19.6x faster | 1.6x faster | - |
+| Barrel Shifter | 8% faster | 7% faster | 15% faster | 17% faster |
+| Compressed Instructions | same | same | same | same |
+
+The 54MHz clock (Tools > Clock Speed) halves every figure.
+
+**Tools > Hardware Multiply/Divide** enables picorv32's M-extension
+(`ENABLE_MUL`/`ENABLE_DIV`/`ENABLE_FAST_MUL` in `top.v`) instead of
+software-emulated integer multiply/divide. This speeds up every integer
+`*`/`/`/`%`, and indirectly `float`/`double` math, since libgcc's
+software floating-point routines are built from integer multiplies and
+shifts (there's no FPU - see [Known limitations](KNOWN_LIMITATIONS.md)).
+The compiler flag (the `m` in `-march=rv32im_zicsr_zifencei`) and the
 gateware always change together from this one menu choice - never set
 independently, since a sketch compiled expecting hardware `mul`/`div`
 would execute an illegal instruction on a bitstream built without this
 enabled.
 
-**Tools > Compressed Instructions** (disabled by default) enables the
+**Tools > Compressed Instructions** enables the
 RISC-V "C" extension (`COMPRESSED_ISA` in `top.v`, plus the `c` in
 `-march`, again always together). Many instructions get a 16-bit
 encoding: a sketch using Serial, SPI, Wire, Servo and WS2812 went from
 26.2KB to 21.6KB of code (about 18% smaller) - the option to reach for
 when a sketch gets close to the 64KB SRAM limit. It costs some LUTs,
-and a 32-bit instruction that straddles a word boundary can take an extra
-fetch cycle. libgcc stays the uncompressed build (the toolchain has no
+but no measurable speed. libgcc stays the uncompressed build (the toolchain has no
 RV32IC variant), which a C-capable CPU runs unchanged.
 
-**Tools > Barrel Shifter** (disabled by default) makes every shift a
+**Tools > Barrel Shifter** makes every shift a
 single-cycle operation (`BARREL_SHIFTER` in `top.v`) instead of one cycle
 per bit position. It's gateware only - no compiler change. Shifts are
 everywhere (bit manipulation, CRCs, fixed-point math, and libgcc's
@@ -838,9 +831,9 @@ The output frequency is selectable via **Tools > Clock Speed**:
 
 | Option | Frequency | Notes |
 | --- | --- | --- |
-| Normal (Recommended) | 27 MHz | Original, unchanged clock this core has always shipped with |
-| Low Power | 13.5 MHz | Roughly half the dynamic power/heat/EMI; proportionally slower UART/I2S/WS2812 timing and sketch execution |
-| Overclocked | 54 MHz | Verified against this design's synthesized timing (~75MHz closing frequency with default menu settings) and against `sdram.v`'s documented 66.7MHz SDRAM timing ceiling — both leave real margin. Enabling other gateware-cost menu options (AI Accelerator, SPI/I2C Buses: Two, I2S Input) alongside this adds logic that may lower the design's actual closing frequency |
+| Normal (default) | 27 MHz | |
+| Low Power | 13.5 MHz | Roughly half the dynamic power; sketches run half as fast, and CAN can't reach 1 Mbit/s |
+| Overclocked | 54 MHz | Twice as fast. Routing closes at 67-80MHz for every measured configuration (see [FPGA resource usage](BUILDING.md#fpga-resource-usage)) and the SDRAM controller is rated to 66.7MHz |
 
 Every option regenerates both the PLL's dividers (`gowin_rpll_sys.v`) and
 `sys_parameters.v`'s `CLK_FREQ` together (see `tools/build_bitstream.py`),

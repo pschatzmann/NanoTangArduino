@@ -1,18 +1,13 @@
 # Known limitations
 
 - **`Serial` is the board's second USB serial port.** The onboard BL616
-  exposes both a JTAG/programming interface and a UART bridge over the
-  same USB cable (confirmed against
-  [Sipeed's official schematic](https://dl.sipeed.com/shareURL/TANG/Nano_20K/2_Schematic):
-  FPGA pin 69 (`uart_tx`) → `BL616_UART_RX`, pin 70 (`uart_rx`) ←
-  `BL616_UART_TX` - the same pins
-  [nand2mario/nestang](https://github.com/nand2mario/nestang) uses for
-  its own console UART), which on most hosts enumerate as two separate
-  serial devices (e.g. two `/dev/ttyACM*`/`/dev/ttyUSB*` entries on
-  Linux, two COM ports on Windows). Confirmed on real hardware: the
-  first (`/dev/ttyUSB0`) is the JTAG/programming interface
-  `tools/upload.py` uses, the second (`/dev/ttyUSB1`) carries
-  `Serial` - point the Serial Monitor at that one.
+  exposes a JTAG/programming interface and a UART bridge over the same
+  USB cable, which enumerate as two serial devices. The first
+  (`/dev/ttyUSB0` on Linux) is the JTAG interface `tools/upload.py` uses;
+  the second (`/dev/ttyUSB1`) carries `Serial` - point the Serial Monitor
+  at that one. (FPGA pin 69 `uart_tx` → `BL616_UART_RX`, pin 70 `uart_rx`
+  ← `BL616_UART_TX`, per
+  [Sipeed's schematic](https://dl.sipeed.com/shareURL/TANG/Nano_20K/2_Schematic).)
 - **Data from the board to the PC gets lost while the PC is sending at the
   same time.** This is the onboard BL616 USB bridge (debugger firmware
   2025030317 on the tested board), not the FPGA: a test board streaming
@@ -26,70 +21,39 @@
   protocol that streams both ways at once, loses data. A newer BL616
   firmware from Sipeed (see their "Update debugger" page) may fix it; that
   hasn't been tried.
-- **`gateware/src/sram8bit.v`'s memory needs an explicit `(* ram_style =
-  "block" *)` attribute** to map onto real Gowin BSRAM; without it, yosys
-  defaults to a small LUT-based distributed-RAM primitive that doesn't
-  scale to this array's size. With the attribute present (as it is in this
-  file), the internal SRAM synthesizes and places cleanly, and
-  `gowin_pack` produces a real `.fs` bitstream for the current design.
-- **The embedded SDRAM's pins auto-place correctly as long as
-  `gateware/src/top.v`'s SDRAM port names match an exact convention**
-  (`O_sdram_clk`, `O_sdram_cke`, `O_sdram_cs_n`, `O_sdram_cas_n`,
-  `O_sdram_ras_n`, `O_sdram_wen_n`, `O_sdram_dqm[3:0]`,
-  `O_sdram_addr[10:0]`, `O_sdram_ba[1:0]`, `IO_sdram_dq[31:0]`) - the
-  GW2AR-18's embedded SiP SDRAM isn't constrained via `.cst` at all;
-  `nextpnr-himbaechel`'s Gowin backend (Project Apicula) auto-places it
-  via a chip-database lookup keyed on these exact top-level port names
-  (see [YosysHQ/nextpnr#1370](https://github.com/YosysHQ/nextpnr/pull/1370)
-  "apicula: add support for magic sip pins"). Renaming these ports breaks
-  place & route with `ERROR: Unconstrained IO:...`.
-- **Uploads are slow in the default (SRAM) boot mode.** Every "upload"
-  re-runs the full FPGA flow (synthesis → place & route → pack), typically
-  several minutes, because the program lives in block RAM initialized at
-  synthesis time rather than in a separate program flash. Tools > Boot
-  Mode: Flash (see [Peripherals](PERIPHERALS.md#flash)) avoids this: the
-  fixed core-only SRAM image (`.text.irq` + `.text.boot`) is identical
-  across sketch compiles, so `build_bitstream.py` caches the resulting
-  `.fs` at `~/.cache/nanotang/bitstreams/` and reuses it on every compile
-  after the first, skipping synthesis/place-and-route/pack entirely.
-  `irq_vec.S` calls the sketch's interrupt dispatcher *indirectly*,
-  through a fixed pointer slot (`irq_dispatch_ptr`, written by
-  `startup.S`) rather than a direct `jal`/`call`, so this file's own bytes
-  stay independent of where the dispatcher happens to link for a given
-  sketch - a direct call's machine code would otherwise encode that
-  link-time distance, breaking the "identical core image" property this
-  caching depends on.
-- **No FPU.** picorv32 has no floating-point extension option at all - every
-  `float`/`double` operation compiles to a call into libgcc's software
-  floating-point routines (`__adddf3`, `__muldf3`, `__divdf3`, etc.), each
-  costing many dozens of cycles. Tools > Hardware Multiply/Divide (see
-  [Peripherals](PERIPHERALS.md#cpu-features)) speeds these routines up
-  significantly (they're internally built from integer multiplies/shifts),
-  but doesn't eliminate the software emulation itself - there's no hardware
-  path to real single-cycle float math on this core. Prefer fixed-point
-  (integer-scaled) arithmetic in hot loops, or the AI accelerator's INT8
-  path where applicable.
-- **DMA's async/background mode only reaches the embedded SDRAM heap, and
-  can't be extended to the internal SRAM** (see [DMA](PERIPHERALS.md#dma)).
-  This needs true dual-port BRAM (the CPU's existing port plus an
-  independent DMA port on the same array), but this toolchain's BRAM
-  inference only supports dual-port memories where each port is
-  single-purpose (fixed read-only or fixed write-only) - never a port that
-  flexibly reads or writes depending on the access, which is what both the
-  CPU's own port and a general-purpose DMA port need; yosys reports `ERROR:
-  no valid mapping found for memory` for that combination regardless of
-  how the Verilog is written. The blocking DMA
-  mode (`dmaCopyWords()`/`dmaCopy()`) has no such restriction, but stalls
-  the CPU (including instruction fetch - picorv32 has no separate
-  instruction bus) for the whole transfer.
-- No USB.
-- **Only part of the core has been tested on real hardware so far** -
-  see [Hardware test status](HARDWARE_STATUS.md). Everything else is
+- **Long `Serial` prints during 44.1kHz I2S audio cause clicks** with the
+  default CPU settings. A print of more than about 32 characters stalls
+  the CPU on the UART long enough to empty the I2S FIFO. Short prints are
+  fine - see [Audio (I2S)](PERIPHERALS.md#audio-i2s) for the CPU budget
+  and how to get more headroom.
+- **The first build for each combination of Tools options takes 15-25
+  minutes** (synthesis, place & route and pack), because in the default
+  SRAM boot mode the program is part of the bitstream. Later builds with
+  the same options reuse the routed design and take seconds - see
+  [Build times](BUILDING.md#build-times-and-the-routed-design-cache).
+- **No FPU.** picorv32 has no floating-point extension - every
+  `float`/`double` operation is a call into libgcc's software routines,
+  each costing many dozens of cycles. Tools > Hardware Multiply/Divide
+  speeds them up (about 1.6x), but there's no hardware float math. Prefer
+  fixed-point arithmetic in hot loops, or the AI accelerator's INT8 path
+  where applicable.
+- **No C library math functions** (`sin()`, `sqrt()`, `pow()`, ...). The
+  core is `-nostdlib` and links only libgcc plus its own `printf`,
+  `mem*()`/`str*()` and `malloc()`, so a sketch calling `<math.h>`
+  functions fails to link.
+- **No C++ exceptions** out of the box - see
+  [Tools menus](BUILDING.md#tools-menus).
+- **DMA's async/background mode only reaches the embedded SDRAM heap,
+  not the internal SRAM** (see [DMA](PERIPHERALS.md#dma)). That would need
+  true dual-port block RAM where both ports can read or write, and this
+  toolchain's BRAM inference only supports dual-port memories whose ports
+  are each fixed read-only or write-only; yosys reports `ERROR: no valid
+  mapping found for memory` for that combination however the Verilog is
+  written. The blocking DMA mode has no such restriction, but stalls the
+  CPU for the whole transfer.
+- No USB (the BL616 owns the board's USB port), no ADC (`analogRead()`
+  always returns 0), no HDMI or RGB LCD support.
+- **Not everything has been tested on real hardware yet** - see
+  [Hardware test status](HARDWARE_STATUS.md). Everything else is
   verified in simulation, synthesis and `arduino-cli compile` (see
   `tools/run_tests.sh`).
-- **yosys 0.33 (what Linux distributions ship) maps block RAMs so they
-  never return data on the real chip** (output enable `OCE` tied low).
-  `tools/build_bitstream.py` corrects this automatically after
-  synthesis, so nothing needs doing - but other flows using this
-  gateware with yosys 0.33 would need the same fix (see
-  `fix_bram_oce()`). Newer yosys versions (2024 onwards) are fine.

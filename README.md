@@ -51,13 +51,13 @@ rather than a full FPGA rebuild - see
   floating-point is always software-emulated regardless)
 - 64KB internal SRAM
 
-**Tested on a real board** (September 2026): the CPU, `Serial`, the
-timers, the SDRAM heap, the SD card over SPI and I2S audio work; several
-other peripherals haven't been tried on hardware yet. See
-[Hardware test status](docs/HARDWARE_STATUS.md) for exactly what's
-verified, and the bugs the first hardware tests found. Everything else is
-verified in simulation (`tools/sim/`), synthesis, place & route and
-`arduino-cli compile` - see `tools/run_tests.sh`.
+**Tested on a real board** (September 2026): the CPU and all CPU/clock
+options, `Serial`, timers and interrupts, GPIO, PWM, `tone()`, `Servo`,
+the SDRAM heap, DMA, the SD card, I2S audio, the WS2812 LED and CAN in
+loopback all work. See [Hardware test status](docs/HARDWARE_STATUS.md)
+for the details and what's still untested; everything else is verified
+in simulation (`tools/sim/`), synthesis, place & route and
+`arduino-cli compile` (`tools/run_tests.sh`).
 
 See [Known limitations](docs/KNOWN_LIMITATIONS.md) for real gaps found
 while building this, and [Roadmap](docs/ROADMAP.md) for what's next.
@@ -92,13 +92,9 @@ This package uses the fixed 27MHz oscillator (via an on-chip PLL, see
 embedded SDRAM (heap), the microSD slot, the MAX98357A audio path, the
 onboard LEDs/buttons, the WS2812, and the GPIO headers - see
 [Peripherals](docs/PERIPHERALS.md) for what's implemented against each.
-The onboard BL616's UART bridge carries `Serial` back to your computer
-over the same USB cable (FPGA pins 69/70, confirmed against
-[Sipeed's official schematic](https://dl.sipeed.com/shareURL/TANG/Nano_20K/2_Schematic)
-and cross-checked against [nand2mario/nestang](https://github.com/nand2mario/nestang)'s
-identical pin choice) - see
-[Known limitations](docs/KNOWN_LIMITATIONS.md) for which USB port that
-actually is. The BL616's JTAG/debug-probe function, HDMI, and RGB LCD
+The onboard BL616's UART bridge carries `Serial` over the same USB cable
+(the second of the two serial ports it creates - see
+[Known limitations](docs/KNOWN_LIMITATIONS.md)). HDMI and the RGB LCD
 connector are not used by this core.
 
 ## Quick start
@@ -125,16 +121,17 @@ prerequisites, Tools menu options, and how to run the verification suite.
 
 ## Documentation
 
-- [Architecture](docs/ARCHITECTURE.md) — repo layout and the SoC's memory map.
+- [Architecture](docs/ARCHITECTURE.md) — repo layout, the SoC's memory
+  map, and notes for changing the gateware.
 - [Peripherals](docs/PERIPHERALS.md) — what each API does and how it maps
-  to gateware/pins: digital I/O & PWM, general GPIO, I2S audio, SPI/I2C/SD
-  card, heap/`malloc`, the AI accelerator, and clocking.
+  to gateware/pins, from digital I/O to CAN, DMA, flash and the CPU
+  options.
 - [Building, installing, and verifying](docs/BUILDING.md) — prerequisites,
   installing the board package, Tools menu options, and `tools/run_tests.sh`.
 - [Hardware test status](docs/HARDWARE_STATUS.md) — what's verified on a
-  real board, what isn't yet, and the bugs found there.
-- [Known limitations](docs/KNOWN_LIMITATIONS.md) — real, currently-blocking
-  gaps (read this before attempting a real board build).
+  real board and what isn't yet.
+- [Known limitations](docs/KNOWN_LIMITATIONS.md) — what doesn't work, or
+  works with caveats.
 - [Licensing](docs/LICENSING.md) — this repo mixes permissive, GPLv3, and
   Apache-2.0 code; it matters which files you're looking at.
 - [Updating the vendored ArduinoCore-API](docs/UPDATING_ARDUINOCORE_API.md)
