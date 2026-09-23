@@ -246,6 +246,47 @@ are chosen at run time, so it claims no GPIO pin up front.
 | Disabled (default) | `:can=disabled` |
 | Enabled | `:can=enabled` |
 
+## FPGA resource usage
+
+How much of the GW2AR-18's logic each Tools option costs, from place &
+route. Each row is the default configuration (one SPI bus, one I2C bus,
+27MHz, SRAM boot) with that one option added:
+
+| Configuration | LUT4 (of 20,736) | vs. default | Max clock after routing |
+|---|---|---|---|
+| Minimal (Tools > SPI Buses / I2C Buses: None) | 10,327 (50%) | -426 | 79.8 MHz |
+| **Default** | **10,753 (52%)** | - | 74.3 MHz |
+| + Barrel Shifter | 10,678 | ~0 | not measured |
+| + SPI Buses: Two | 11,173 | +420 | 71.9 MHz |
+| + I2C Buses: Two | 11,284 | +531 | 73.7 MHz |
+| + Compressed Instructions | 11,403 | +650 | 66.8 MHz |
+| + Hardware Multiply/Divide | 11,476 | +723 | not measured |
+| + PWM Audio | 11,775 | +1,022 | 71.6 MHz |
+| + I2S Input | 11,924 | +1,171 | 74.4 MHz |
+| + Flash Cache | 12,983 | +2,230 | not measured |
+| + CAN | 13,225 | +2,472 | 75.6 MHz |
+| + AI Accelerator | 14,306 (69%) | +3,553 | 68.8 MHz |
+
+Notes:
+
+- The costs add up roughly when options are combined, so most
+  combinations fit, but everything at once would not.
+- Other resources: the default design uses 32 of the 46 block RAMs (the
+  64KB internal SRAM) and about 3,500 of 15,552 flip-flops. The AI
+  accelerator adds 9 block RAMs and 32 of the 96 MULT9X9 DSP blocks.
+  Hardware Multiply/Divide uses DSP blocks too.
+- Differences below about 300 LUT4s are within run-to-run variation of the
+  synthesis and placement tools, which is why the Barrel Shifter (a few
+  hundred LUTs in synthesis) shows up as roughly zero here.
+- Tools > Boot Mode: Flash showed no measurable difference in synthesis.
+- Every configuration whose routing was measured runs well above the
+  54MHz Overclocked setting. For Hardware Multiply/Divide, nextpnr's
+  estimate before routing was 54.4MHz - right at that limit - so check
+  timing before combining it with Overclocked.
+- Measured on 2026-09-23 with yosys 0.33, nextpnr-himbaechel 0.11.1 and
+  apicula 0.33. `tools/run_tests.sh --utilization` prints these figures
+  for the option combinations it builds.
+
 ## Verifying changes
 
 ```sh

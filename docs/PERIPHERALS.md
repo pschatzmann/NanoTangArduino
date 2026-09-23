@@ -464,6 +464,9 @@ written for this core:
 - Not implemented: overload frames. A dominant bit anywhere in the
   intermission is taken as a start of frame.
 
+Enabling it costs about 2,500 LUT4s, roughly 12% of the chip (see
+[Building: FPGA resource usage](BUILDING.md#fpga-resource-usage)).
+
 It needs an external 3.3V CAN transceiver, such as an SN65HVD230, whose
 TXD/RXD go to two GPIO pins: GPIO18 (TX, FPGA pin 71) and GPIO11 (RX,
 pin 76) by default. `CAN.setPins(tx, rx)` before `begin()` picks others,
