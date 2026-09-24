@@ -102,50 +102,71 @@ fi
 
 echo "== Writing package_nanotang_index.json =="
 python3 - "$ROOT/package_nanotang_index.json" "$EXTRA_SYSTEMS_JSON" <<PYEOF
-import json, sys
+import json, os, sys
 
 path = sys.argv[1]
 extra_systems = json.loads(sys.argv[2])
-index = {
-    "packages": [{
+
+new_platform = {
+    "name": "Sipeed Tang Nano 20K (PicoRV32 SoC)",
+    "architecture": "tangnano20k",
+    "version": "${VERSION}",
+    "category": "Contributed",
+    "url": "${RELEASE_URL}/${BOARD_ARCHIVE}",
+    "archiveFileName": "${BOARD_ARCHIVE}",
+    "checksum": "SHA-256:${board_sha}",
+    "size": "${board_size}",
+    "help": {"online": "https://github.com/${GITHUB_REPO}/blob/main/docs/BUILDING.md"},
+    "boards": [{"name": "Tang Nano 20K (PicoRV32 SoC)"}],
+    "toolsDependencies": [
+        {"packager": "nanotang", "name": "${TOOL_NAME}", "version": "${TOOLCHAIN_VERSION}"}
+    ]
+}
+new_tool = {
+    "name": "${TOOL_NAME}",
+    "version": "${TOOLCHAIN_VERSION}",
+    "systems": [{
+        "host": "${HOST}",
+        "url": "${RELEASE_URL}/${TOOL_ARCHIVE}",
+        "archiveFileName": "${TOOL_ARCHIVE}",
+        "checksum": "SHA-256:${tool_sha}",
+        "size": "${tool_size}"
+    }] + extra_systems
+}
+
+# Merge into the existing index (if any) instead of overwriting it, so
+# previously released versions stay listed in Arduino Board Manager - each
+# release only ever adds/updates its own version's entry.
+if os.path.exists(path):
+    with open(path) as f:
+        index = json.load(f)
+else:
+    index = {"packages": [{
         "name": "nanotang",
         "maintainer": "Phil Schatzmann",
         "websiteURL": "https://github.com/${GITHUB_REPO}",
         "email": "phil.schatzmann@gmail.com",
         "help": {"online": "https://github.com/${GITHUB_REPO}/blob/main/docs/BUILDING.md"},
-        "platforms": [{
-            "name": "Sipeed Tang Nano 20K (PicoRV32 SoC)",
-            "architecture": "tangnano20k",
-            "version": "${VERSION}",
-            "category": "Contributed",
-            "url": "${RELEASE_URL}/${BOARD_ARCHIVE}",
-            "archiveFileName": "${BOARD_ARCHIVE}",
-            "checksum": "SHA-256:${board_sha}",
-            "size": "${board_size}",
-            "help": {"online": "https://github.com/${GITHUB_REPO}/blob/main/docs/BUILDING.md"},
-            "boards": [{"name": "Tang Nano 20K (PicoRV32 SoC)"}],
-            "toolsDependencies": [
-                {"packager": "nanotang", "name": "${TOOL_NAME}", "version": "${TOOLCHAIN_VERSION}"}
-            ]
-        }],
-        "tools": [{
-            "name": "${TOOL_NAME}",
-            "version": "${TOOLCHAIN_VERSION}",
-            "systems": [{
-                "host": "${HOST}",
-                "url": "${RELEASE_URL}/${TOOL_ARCHIVE}",
-                "archiveFileName": "${TOOL_ARCHIVE}",
-                "checksum": "SHA-256:${tool_sha}",
-                "size": "${tool_size}"
-            }] + extra_systems
-        }]
-    }]
-}
+        "platforms": [],
+        "tools": [],
+    }]}
+
+package = index["packages"][0]
+
+platforms = [p for p in package.get("platforms", []) if p.get("version") != "${VERSION}"]
+platforms.append(new_platform)
+platforms.sort(key=lambda p: tuple(int(x) for x in p["version"].split(".")))
+package["platforms"] = platforms
+
+tools = [t for t in package.get("tools", []) if t.get("version") != "${TOOLCHAIN_VERSION}"]
+tools.append(new_tool)
+tools.sort(key=lambda t: t["version"])
+package["tools"] = tools
 
 with open(path, "w") as f:
     json.dump(index, f, indent=2)
     f.write("\n")
-print(f"Wrote {path}")
+print(f"Wrote {path} ({len(platforms)} platform version(s), {len(tools)} tool version(s))")
 PYEOF
 
 echo
