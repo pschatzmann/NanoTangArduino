@@ -192,6 +192,13 @@ recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.f
 recipe.objcopy.hex.pattern=python3 "{runtime.platform.path}/tools/build_bitstream.py" "{build.path}/{build.project_name}.elf" "{compiler.path}{compiler.objcopy.cmd}" "{build.path}/fpga" "{build.ai_accel}" "{build.boot_flash}" "{build.spi_count}" "{build.i2c_count}" "{build.hw_muldiv}" "{build.i2s_rx}" "{build.clk_freq_hz}" "{build.pll_idiv}" "{build.pll_fbdiv}" "{build.pll_odiv}" "{build.pwm_audio}" "{build.flash_cache}" "{build.compressed}" "{build.barrel_shifter}" "{build.can}"
 
 recipe.size.pattern="{compiler.path}{compiler.size.cmd}" -A "{build.path}/{build.project_name}.elf"
+# Everything except .flash_data lives in the one 64KB internal SRAM (see
+# cores/tangnano20k/link_cmd.ld): code, constants, variables and the IRQ
+# scratch area share it. So "program storage" is the whole SRAM footprint
+# (compared against upload.maximum_size), and "global variables" is the
+# .data/.bss part of it. .flash_data (Boot Mode: Flash) is not counted.
+recipe.size.regex=^(?:\.text\S*|\.irq_scratch|\.rodata\S*|\.init_array|\.data|\.bss)\s+([0-9]+).*
+recipe.size.regex.data=^(?:\.data|\.bss)\s+([0-9]+).*
 
 # ---------------------------------------------------------------------------
 # Upload

@@ -29,6 +29,14 @@ tangnano20k.build.mabi=ilp32
 tangnano20k.build.sram_addr_width=14
 
 tangnano20k.upload.tool=tangnano20k_upload
+# arduino-cli/IDE 2.x select the upload tool per port protocol (pluggable
+# discovery); openFPGALoader finds the board by USB ID, so any port - or
+# none - uses the same tool.
+tangnano20k.upload.tool.default=tangnano20k_upload
+tangnano20k.upload.tool.serial=tangnano20k_upload
+# arduino-cli refuses to upload without a programmer unless upload.protocol
+# is set; the value is informational only (tools/upload.py ignores it).
+tangnano20k.upload.protocol=openfpgaloader
 tangnano20k.upload.maximum_size=65536
 tangnano20k.upload.maximum_data_size=65536
 

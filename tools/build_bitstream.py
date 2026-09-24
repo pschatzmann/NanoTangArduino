@@ -172,6 +172,62 @@ def run(cmd, **kwargs):
     subprocess.run(cmd, check=True, **kwargs)
 
 
+# Where pip/conda/pipx/oss-cad-suite usually put gowin_pack - checked when
+# it isn't on PATH, e.g. because the Arduino IDE was started from the
+# desktop and never read the shell startup file that activates conda.
+GOWIN_PACK_DIRS = [
+    Path.home() / ".local" / "bin",
+    Path.home() / "miniconda3" / "bin",
+    Path.home() / "miniforge3" / "bin",
+    Path.home() / "mambaforge" / "bin",
+    Path.home() / "anaconda3" / "bin",
+    Path.home() / "oss-cad-suite" / "bin",
+    Path("/opt/conda/bin"),
+    Path("/opt/oss-cad-suite/bin"),
+]
+
+_gowin_pack_cmd = None
+
+
+def gowin_pack_cmd():
+    """The command that runs apicula's gowin_pack, as a list: $GOWIN_PACK if
+    set, else gowin_pack from PATH, else the apycula module if this Python
+    can import it, else gowin_pack from one of GOWIN_PACK_DIRS. Exits with
+    an explanation if none of them exists."""
+    global _gowin_pack_cmd
+    if _gowin_pack_cmd is not None:
+        return _gowin_pack_cmd
+    env = os.environ.get("GOWIN_PACK")
+    if env:
+        _gowin_pack_cmd = [env]
+        return _gowin_pack_cmd
+    found = shutil.which("gowin_pack")
+    if found:
+        _gowin_pack_cmd = [found]
+        return _gowin_pack_cmd
+    try:
+        import importlib.util
+        if importlib.util.find_spec("apycula") is not None:
+            _gowin_pack_cmd = [sys.executable, "-m", "apycula.gowin_pack"]
+            return _gowin_pack_cmd
+    except ImportError:
+        pass
+    for d in GOWIN_PACK_DIRS:
+        for name in ("gowin_pack", "gowin_pack.exe"):
+            candidate = d / name
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                _gowin_pack_cmd = [str(candidate)]
+                return _gowin_pack_cmd
+    sys.exit(
+        "error: gowin_pack (apicula) not found. It is not on PATH (the "
+        "Arduino IDE does not read ~/.bashrc, so conda/venv activations "
+        "there are not visible), the Python running this script ("
+        + sys.executable + ") cannot import apycula, and it is not in any of: "
+        + ", ".join(str(d) for d in GOWIN_PACK_DIRS)
+        + ". Install it with `pip install apycula`, or set the GOWIN_PACK "
+        "environment variable to its full path - see docs/BUILDING.md.")
+
+
 # Block RAM primitives: each output clock-enable port and the read-side
 # clock-enable port that drives it (see fix_bram_oce()).
 BRAM_OCE_PORTS = {
@@ -230,8 +286,16 @@ def build_version_stamp():
         except OSError:
             lines.append(cmd[0] + " not found")
     # apicula's version, from the Python interpreter gowin_pack runs under.
-    gowin_pack = shutil.which("gowin_pack")
+    cmd = gowin_pack_cmd()
+    gowin_pack = cmd[0] if len(cmd) == 1 else None
     version = "unknown"
+    if len(cmd) > 1:
+        # run as a module: it is this Python's apycula
+        try:
+            import importlib.metadata
+            version = importlib.metadata.version("Apycula")
+        except Exception:
+            pass
     if gowin_pack:
         try:
             with open(gowin_pack) as f:
@@ -475,7 +539,7 @@ def main():
                 with open(pnr_json, "w") as f:
                     json.dump(netlist, f)
                 print(f"Reused cached routed design ({routed_dir}) - skipped synthesis and place & route")
-                run(["gowin_pack", "-d", FAMILY, "-o", str(fs_path), str(pnr_json)])
+                run(gowin_pack_cmd() + ["-d", FAMILY, "-o", str(fs_path), str(pnr_json)])
                 print(f"Bitstream written to {fs_path}")
                 return 0
 
@@ -588,7 +652,7 @@ def main():
         with open(pnr_json, "w") as f:
             json.dump(netlist, f)
 
-    run(["gowin_pack", "-d", FAMILY, "-o", str(fs_path), str(pnr_json)])
+    run(gowin_pack_cmd() + ["-d", FAMILY, "-o", str(fs_path), str(pnr_json)])
 
     if cached_fs is not None:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)

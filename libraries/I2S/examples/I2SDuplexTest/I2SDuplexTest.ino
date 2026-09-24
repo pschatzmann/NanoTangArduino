@@ -8,7 +8,7 @@
  * buffering (see docs/PERIPHERALS.md "Buffering and interrupts").
  */
 
-#include <I2S.h>
+#include <I2STangNano.h>
 
 const unsigned long sampleRate = 44100;
 

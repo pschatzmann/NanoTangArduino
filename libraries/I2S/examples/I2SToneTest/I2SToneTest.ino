@@ -1,6 +1,6 @@
 /* Plays a square-wave tone through the onboard MAX98357A amplifier. */
 
-#include <I2S.h>
+#include <I2STangNano.h>
 
 const unsigned long sampleRate = 44100;
 const unsigned long toneHz = 440;

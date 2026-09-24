@@ -22,7 +22,14 @@
   bundle, which ships yosys + nextpnr-himbaechel + apicula + openFPGALoader
   together. If building nextpnr from source, configure it with `-DARCH=himbaechel`.
 - **[Apicula](https://github.com/YosysHQ/apicula)** (`gowin_pack`) for
-  producing the final Gowin bitstream.
+  producing the final Gowin bitstream. The Arduino IDE started from the
+  desktop does not read `~/.bashrc`, so a `gowin_pack` that is only on
+  PATH through a conda/venv activation there is invisible to it.
+  `tools/build_bitstream.py` therefore also tries `python3 -m
+  apycula.gowin_pack` and the usual install folders (`~/.local/bin`,
+  `~/miniconda3/bin`, `~/miniforge3/bin`, `~/anaconda3/bin`,
+  `~/oss-cad-suite/bin`, ...). If yours is somewhere else, set the
+  `GOWIN_PACK` environment variable to its full path.
 - **openFPGALoader** for programming the board over USB.
 - **Python 3** (used by `tools/*.py`) and **bash** (`tools/run_tests.sh`).
 

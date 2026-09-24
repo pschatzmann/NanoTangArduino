@@ -183,7 +183,7 @@ single LED.
 
 ## Audio (I2S)
 
-`#include <I2S.h>` (`libraries/I2S/`, backed by `gateware/src/i2s.v`).
+`#include <I2STangNano.h>` (`libraries/I2S/`, backed by `gateware/src/i2s.v`).
 `I2S.begin(config)` takes an `I2SConfig` - get one from
 `I2S.defaultConfig(mode)`, adjust its fields, and pass it in:
 

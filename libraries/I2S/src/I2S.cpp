@@ -1,4 +1,4 @@
-#include "I2S.h"
+#include "I2STangNano.h"
 #include "tangnano20k_soc.h"
 #include <stdlib.h>
 

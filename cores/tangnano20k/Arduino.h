@@ -10,7 +10,7 @@
 /* SPI, Wire (I2C), and I2S are bundled libraries (libraries/SPI,
  * libraries/Wire, libraries/I2S), not part of the core - a sketch that
  * wants them does `#include <SPI.h>` / `#include <Wire.h>` / `#include
- * <I2S.h>` itself, same as on any other Arduino board. This keeps a
+ * <I2STangNano.h>` itself, same as on any other Arduino board. This keeps a
  * sketch that doesn't use them (e.g. Blink) from linking in code it never
  * calls, which matters on this board's 64KB internal SRAM budget. */
 

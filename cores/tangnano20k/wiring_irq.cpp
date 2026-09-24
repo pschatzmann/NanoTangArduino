@@ -280,7 +280,7 @@ extern "C" void tangnano20k_dma_set_async_callback(void (*callback)(void))
 /* Same registration pattern as the DMA callback above, for the same
  * reason: I2S is an opt-in library (libraries/I2S), not part of the
  * always-linked core, so this file can't call directly into it - a
- * sketch that never #includes I2S.h must still link cleanly. */
+ * sketch that never #includes I2STangNano.h must still link cleanly. */
 static void (*i2sIrqCallback)(void) = nullptr;
 
 extern "C" void tangnano20k_i2s_set_irq_callback(void (*callback)(void))
