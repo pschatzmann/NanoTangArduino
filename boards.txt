@@ -38,7 +38,7 @@ tangnano20k.upload.maximum_data_size=65536
 # for speed, and Debug adds -g without changing the actual optimization
 # level much (debug info isn't part of what gets baked into SRAM - see
 # tools/build_bitstream.py - so it doesn't cost SRAM budget).
-tangnano20k.menu.optimize.small=Small (-Os) (Recommended)
+tangnano20k.menu.optimize.small=Small (-Os) (Default)
 tangnano20k.menu.optimize.small.build.optimization_flags=-Os
 tangnano20k.menu.optimize.fast=Fast (-O2)
 tangnano20k.menu.optimize.fast.build.optimization_flags=-O2
@@ -53,7 +53,7 @@ tangnano20k.menu.optimize.debug.build.optimization_flags=-Og -g
 # all - see tools/build_bitstream.py and top.v's `ifdef WITH_AI_ACCEL.
 # Disabled by default: most sketches don't use it, and it's a real
 # LUT/BRAM cost on a chip this size, not a free one.
-tangnano20k.menu.ai_accel.disabled=Disabled (Recommended)
+tangnano20k.menu.ai_accel.disabled=Disabled (Default)
 tangnano20k.menu.ai_accel.disabled.build.ai_accel=0
 tangnano20k.menu.ai_accel.enabled=Enabled
 tangnano20k.menu.ai_accel.enabled.build.ai_accel=1
@@ -66,7 +66,7 @@ tangnano20k.menu.ai_accel.enabled.build.ai_accel=1
 # gateware/bitstream at all (libraries/SD is pure software on top of the
 # always-present SPI peripheral) - this menu only makes libraries/SD/src/SD.h
 # itself compile instead of erroring out.
-tangnano20k.menu.sd_card.disabled=Disabled (Recommended)
+tangnano20k.menu.sd_card.disabled=Disabled (Default)
 tangnano20k.menu.sd_card.disabled.build.sd_defines=
 tangnano20k.menu.sd_card.enabled=Enabled (GPLv3)
 tangnano20k.menu.sd_card.enabled.build.sd_defines=-DTANGNANO20K_SD_ENABLED
@@ -76,7 +76,7 @@ tangnano20k.menu.sd_card.enabled.build.sd_defines=-DTANGNANO20K_SD_ENABLED
 # working `throw`/`catch` by itself - __cxa_throw, _Unwind_Resume, and
 # __gxx_personality_v0 are still unresolved unless you bring your own
 # freestanding C++ runtime support. See platform.txt.
-tangnano20k.menu.exceptions.disabled=Disabled (Recommended)
+tangnano20k.menu.exceptions.disabled=Disabled (Default)
 tangnano20k.menu.exceptions.disabled.build.exceptions_flags=-fno-exceptions
 tangnano20k.menu.exceptions.enabled=Enabled
 tangnano20k.menu.exceptions.enabled.build.exceptions_flags=-fexceptions
@@ -91,7 +91,7 @@ tangnano20k.menu.exceptions.enabled.build.exceptions_flags=-fexceptions
 # ordinary uploads become a fast flash write - see docs/BUILDING.md and
 # docs/PERIPHERALS.md "Flash". Defaults to SRAM since Flash mode needs a
 # one-time bitstream-flash step most sketches don't need to think about.
-tangnano20k.menu.boot_mode.sram=SRAM (Recommended)
+tangnano20k.menu.boot_mode.sram=SRAM (Default)
 tangnano20k.menu.boot_mode.sram.build.boot_flash=0
 tangnano20k.menu.boot_mode.flash=Flash (fast uploads)
 tangnano20k.menu.boot_mode.flash.build.boot_flash=1
@@ -112,14 +112,14 @@ tangnano20k.menu.boot_mode.flash.build.boot_flash=1
 # those pins are unavailable as plain GPIO whenever selected, whether or
 # not a sketch actually uses SPI2/Wire2 - see docs/PERIPHERALS.md "SPI,
 # I2C (Wire), and the SD card".
-tangnano20k.menu.spi_buses.one=One (Recommended)
+tangnano20k.menu.spi_buses.one=One (Default)
 tangnano20k.menu.spi_buses.one.build.spi_count=1
 tangnano20k.menu.spi_buses.none=None
 tangnano20k.menu.spi_buses.none.build.spi_count=0
 tangnano20k.menu.spi_buses.two=Two
 tangnano20k.menu.spi_buses.two.build.spi_count=2
 
-tangnano20k.menu.i2c_buses.one=One (Recommended)
+tangnano20k.menu.i2c_buses.one=One (Default)
 tangnano20k.menu.i2c_buses.one.build.i2c_count=1
 tangnano20k.menu.i2c_buses.none=None
 tangnano20k.menu.i2c_buses.none.build.i2c_count=0
@@ -141,7 +141,7 @@ tangnano20k.menu.i2c_buses.two.build.i2c_count=2
 # for rv32ima, and its routines (64-bit division, all software floating
 # point) contain mul/div instructions a plain RV32I CPU traps on - found
 # on real hardware, where the first printf("%lu") hung the CPU.
-tangnano20k.menu.hw_muldiv.disabled=Disabled (Recommended)
+tangnano20k.menu.hw_muldiv.disabled=Disabled (Default)
 tangnano20k.menu.hw_muldiv.disabled.build.march_m=
 tangnano20k.menu.hw_muldiv.disabled.build.libgcc_path={compiler.path}../lib/gcc/riscv64-zephyr-elf/12.2.0/rv32i_zicsr_zifencei/ilp32/libgcc.a
 tangnano20k.menu.hw_muldiv.disabled.build.hw_muldiv=0
@@ -157,7 +157,7 @@ tangnano20k.menu.hw_muldiv.enabled.build.hw_muldiv=1
 # cost like SPI Buses/I2C Buses: Two's, gated the same way - GPIO6 is unavailable as
 # plain GPIO whenever this is enabled, whether or not a sketch actually
 # calls I2S.read().
-tangnano20k.menu.i2s_rx.disabled=Disabled (Recommended)
+tangnano20k.menu.i2s_rx.disabled=Disabled (Default)
 tangnano20k.menu.i2s_rx.disabled.build.i2s_rx=0
 tangnano20k.menu.i2s_rx.enabled=Enabled
 tangnano20k.menu.i2s_rx.enabled.build.i2s_rx=1
@@ -167,7 +167,7 @@ tangnano20k.menu.i2s_rx.enabled.build.i2s_rx=1
 # and GPIO17 (right) - see docs/PERIPHERALS.md "Audio (PWM)". Same real
 # GPIO-pin cost as I2S Input, gated the same way - both pins are
 # unavailable as plain GPIO whenever this is enabled.
-tangnano20k.menu.pwm_audio.disabled=Disabled (Recommended)
+tangnano20k.menu.pwm_audio.disabled=Disabled (Default)
 tangnano20k.menu.pwm_audio.disabled.build.pwm_audio=0
 tangnano20k.menu.pwm_audio.enabled=Enabled
 tangnano20k.menu.pwm_audio.enabled.build.pwm_audio=1
@@ -177,7 +177,7 @@ tangnano20k.menu.pwm_audio.enabled.build.pwm_audio=1
 # of FLASH_DATA/PROGMEM tables drop from ~510 to ~2 clocks, sequential
 # reads to ~290, and Boot Mode: Flash boots faster. Costs ~1,700 LUT4s
 # (~8% of the FPGA) whether or not a sketch reads flash, hence opt-in.
-tangnano20k.menu.flash_cache.disabled=Disabled (Recommended)
+tangnano20k.menu.flash_cache.disabled=Disabled (Default)
 tangnano20k.menu.flash_cache.disabled.build.flash_cache=0
 tangnano20k.menu.flash_cache.enabled=Enabled
 tangnano20k.menu.flash_cache.enabled.build.flash_cache=1
@@ -209,7 +209,7 @@ tangnano20k.menu.flash_cache.enabled.build.flash_cache=1
 # Enabling other gateware-cost menu options alongside this may add logic
 # that lowers the design's actual closing frequency - re-verify timing if
 # you combine them.
-tangnano20k.menu.f_cpu.normal=Normal (27 MHz) (Recommended)
+tangnano20k.menu.f_cpu.normal=Normal (27 MHz) (Default)
 tangnano20k.menu.f_cpu.normal.build.f_cpu=27000000L
 tangnano20k.menu.f_cpu.normal.build.clk_freq_hz=27000000
 tangnano20k.menu.f_cpu.normal.build.pll_idiv=0
@@ -238,7 +238,7 @@ tangnano20k.menu.f_cpu.overclock.build.pll_odiv=16
 # some LUTs, and fetching misaligned 32-bit instructions can cost an
 # extra cycle. libgcc stays the uncompressed build (the Zephyr SDK has no
 # RV32IC variant); a C-capable CPU runs it unchanged.
-tangnano20k.menu.compressed.disabled=Disabled (Recommended)
+tangnano20k.menu.compressed.disabled=Disabled (Default)
 tangnano20k.menu.compressed.disabled.build.march_c=
 tangnano20k.menu.compressed.disabled.build.compressed=0
 tangnano20k.menu.compressed.enabled=Enabled (smaller code)
@@ -251,7 +251,7 @@ tangnano20k.menu.compressed.enabled.build.compressed=1
 # manipulation, CRCs, fixed-point math and libgcc's software
 # floating-point routines - so this speeds up much more than it sounds.
 # Costs a few hundred LUTs.
-tangnano20k.menu.barrel_shifter.disabled=Disabled (Recommended)
+tangnano20k.menu.barrel_shifter.disabled=Disabled (Default)
 tangnano20k.menu.barrel_shifter.disabled.build.barrel_shifter=0
 tangnano20k.menu.barrel_shifter.enabled=Enabled (faster shifts)
 tangnano20k.menu.barrel_shifter.enabled.build.barrel_shifter=1
@@ -260,7 +260,7 @@ tangnano20k.menu.barrel_shifter.enabled.build.barrel_shifter=1
 # (gateware/src/can_ctrl.v) for libraries/CAN. Its TX/RX pins are chosen
 # at run time (CAN.setPins(), default GPIO18/GPIO11), so enabling it
 # claims no GPIO pin up front - only LUTs.
-tangnano20k.menu.can.disabled=Disabled (Recommended)
+tangnano20k.menu.can.disabled=Disabled (Default)
 tangnano20k.menu.can.disabled.build.can=0
 tangnano20k.menu.can.enabled=Enabled
 tangnano20k.menu.can.enabled.build.can=1
