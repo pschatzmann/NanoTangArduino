@@ -135,7 +135,14 @@ def main():
         index = json.load(f)
     print(f"== {index_path.name} is valid JSON ==")
 
-    archives = sorted(p.name for p in dist.iterdir() if p.is_file() and p.name != manifest.name)
+    # dist/ is never wiped (see make_release.sh), so it can still hold board
+    # archives from earlier versions - only upload this version's one.
+    board_archive = f"arduino-tangnano20k-{version}.tar.bz2"
+    archives = sorted(
+        p.name for p in dist.iterdir()
+        if p.is_file() and p.name != manifest.name
+        and (not p.name.startswith("arduino-tangnano20k-") or p.name == board_archive)
+    )
     if not archives:
         sys.exit(f"ERROR: no archives found in {dist}")
     print(f"== Archives to release: {', '.join(archives)} ==")
