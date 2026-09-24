@@ -12,12 +12,12 @@
         {
           "name": "Sipeed Tang Nano 20K (PicoRV32 SoC)",
           "architecture": "tangnano20k",
-          "version": "0.2.0",
+          "version": "0.2.1",
           "category": "Contributed",
-          "url": "https://github.com/pschatzmann/arduino-tangnano20k/releases/download/v0.2.0/arduino-tangnano20k-0.2.0.tar.bz2",
-          "archiveFileName": "arduino-tangnano20k-0.2.0.tar.bz2",
-          "checksum": "SHA-256:a81c5973ee6e4fb7b2a9c317a33a5fa0fa373253f5e3270f518823ddb147156e",
-          "size": "261223",
+          "url": "https://github.com/pschatzmann/arduino-tangnano20k/releases/download/v0.2.1/arduino-tangnano20k-0.2.1.tar.bz2",
+          "archiveFileName": "arduino-tangnano20k-0.2.1.tar.bz2",
+          "checksum": "SHA-256:de52c79e59b9819a2b2dcb533f54907054de321e4569154e1d58a0bd8b816715",
+          "size": "293035",
           "help": {
             "online": "https://github.com/pschatzmann/arduino-tangnano20k/blob/main/docs/BUILDING.md"
           },
@@ -42,28 +42,28 @@
           "systems": [
             {
               "host": "x86_64-pc-linux-gnu",
-              "url": "https://github.com/pschatzmann/arduino-tangnano20k/releases/download/v0.2.0/riscv-zephyr-elf-0.17.0-x86_64-pc-linux-gnu.tar.bz2",
+              "url": "https://github.com/pschatzmann/arduino-tangnano20k/releases/download/v0.2.1/riscv-zephyr-elf-0.17.0-x86_64-pc-linux-gnu.tar.bz2",
               "archiveFileName": "riscv-zephyr-elf-0.17.0-x86_64-pc-linux-gnu.tar.bz2",
               "checksum": "SHA-256:0879b7fd4939e0e7e557f03763d70b1de4a0146e2c23b32a663c5ae5bdce96f1",
               "size": "212955408"
             },
             {
               "host": "x86_64-apple-darwin",
-              "url": "https://github.com/pschatzmann/arduino-tangnano20k/releases/download/v0.2.0/riscv-zephyr-elf-0.17.0-x86_64-apple-darwin.tar.bz2",
+              "url": "https://github.com/pschatzmann/arduino-tangnano20k/releases/download/v0.2.1/riscv-zephyr-elf-0.17.0-x86_64-apple-darwin.tar.bz2",
               "archiveFileName": "riscv-zephyr-elf-0.17.0-x86_64-apple-darwin.tar.bz2",
               "checksum": "SHA-256:c9a3b3305282fd8a13b342dfd3a773ed73a4e679f7cb3636d397b4fda8f4b097",
               "size": "218459339"
             },
             {
               "host": "arm64-apple-darwin",
-              "url": "https://github.com/pschatzmann/arduino-tangnano20k/releases/download/v0.2.0/riscv-zephyr-elf-0.17.0-arm64-apple-darwin.tar.bz2",
+              "url": "https://github.com/pschatzmann/arduino-tangnano20k/releases/download/v0.2.1/riscv-zephyr-elf-0.17.0-arm64-apple-darwin.tar.bz2",
               "archiveFileName": "riscv-zephyr-elf-0.17.0-arm64-apple-darwin.tar.bz2",
               "checksum": "SHA-256:e6f6162791242a926fc428d4ef14b5c13a6fe4e8139e16ec4359a952cd9bf481",
               "size": "203136546"
             },
             {
               "host": "x86_64-mingw32",
-              "url": "https://github.com/pschatzmann/arduino-tangnano20k/releases/download/v0.2.0/riscv-zephyr-elf-0.17.0-x86_64-mingw32.zip",
+              "url": "https://github.com/pschatzmann/arduino-tangnano20k/releases/download/v0.2.1/riscv-zephyr-elf-0.17.0-x86_64-mingw32.zip",
               "archiveFileName": "riscv-zephyr-elf-0.17.0-x86_64-mingw32.zip",
               "checksum": "SHA-256:48ea73ed4e952ddc984fff2eb93dc67ec3b9b930ea0ffd98acc5904be33d23e0",
               "size": "283624660"
