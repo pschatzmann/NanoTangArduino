@@ -22,7 +22,7 @@ compiler.warning_flags.all=-Wall -Wextra
 # Compressed Instructions), each driven by its menu in lockstep with the
 # gateware - see boards.txt. The _zicsr_zifencei suffix only spells out
 # what the older rv32i2p0 name implied; no code here uses CSRs.
-build.march_m=
+build.march_m=m
 build.march_c=
 compiler.march=rv32i{build.march_m}{build.march_c}_zicsr_zifencei
 compiler.mabi={build.mabi}
@@ -66,9 +66,9 @@ build.i2c_count=1
 # Overridden by the Tools > Hardware Multiply/Divide board menu (see
 # boards.txt), which also overrides build.march_m and build.libgcc_path in
 # lockstep - see that menu's comment there for why they must move
-# together. "0" (default) = software mul/div/float, matching every
-# previous build of this core; "1" = real M-extension hardware.
-build.hw_muldiv=0
+# together. "1" (default) = real M-extension hardware; "0" = software
+# mul/div/float.
+build.hw_muldiv=1
 
 # Overridden by the Tools > Compressed Instructions / Barrel Shifter board
 # menus (see boards.txt): "0" (default) = off, matching every previous
@@ -79,6 +79,12 @@ build.barrel_shifter=0
 # Overridden by the Tools > CAN board menu (see boards.txt): "0" (default)
 # leaves the CAN controller out of the gateware.
 build.can=0
+
+# Overridden by the Tools > Boot Mode board menu (see boards.txt):
+# link_cmd.ld (default) keeps everything in the internal SRAM;
+# link_cmd_sdram.ld (the "+ SDRAM" entries) moves code off the hot
+# path into SDRAM.
+build.ldscript=link_cmd.ld
 
 # Overridden by the Tools > I2S Input board menu (see boards.txt): "0"
 # (default) leaves GPIO6 as plain GPIO and I2S.read() always reads back
@@ -128,7 +134,7 @@ compiler.c.elf.cmd={compiler.prefix}g++
 # leaving the actual interrupt handler and boot stub code entirely absent
 # from the linked binary. This was a real, previously-undetected bug this
 # project had - see docs/KNOWN_LIMITATIONS.md.
-compiler.c.elf.flags=-nostdlib -nostartfiles -march={compiler.march} -mabi={compiler.mabi} {build.optimization_flags} -Wl,--gc-sections -Wl,--undefined=irq_vec -Wl,--undefined=_boot -T{build.core.path}/link_cmd.ld -Wl,-Map={build.path}/{build.project_name}.map
+compiler.c.elf.flags=-nostdlib -nostartfiles -march={compiler.march} -mabi={compiler.mabi} {build.optimization_flags} -Wl,--gc-sections -Wl,--undefined=irq_vec -Wl,--undefined=_boot -T{build.core.path}/{build.ldscript} -Wl,-Map={build.path}/{build.project_name}.map
 
 compiler.cpp.cmd={compiler.prefix}g++
 # Overridden per-selection by the Tools > C++ Exceptions board menu (see
@@ -196,7 +202,8 @@ recipe.size.pattern="{compiler.path}{compiler.size.cmd}" -A "{build.path}/{build
 # cores/tangnano20k/link_cmd.ld): code, constants, variables and the IRQ
 # scratch area share it. So "program storage" is the whole SRAM footprint
 # (compared against upload.maximum_size), and "global variables" is the
-# .data/.bss part of it. .flash_data (Boot Mode: Flash) is not counted.
+# .data/.bss part of it. .flash_data (Boot Mode: Flash) is not counted,
+# and neither is .sdram_image (Tools > Boot Mode: ... + SDRAM).
 recipe.size.regex=^(?:\.text\S*|\.irq_scratch|\.rodata\S*|\.init_array|\.data|\.bss)\s+([0-9]+).*
 recipe.size.regex.data=^(?:\.data|\.bss)\s+([0-9]+).*
 

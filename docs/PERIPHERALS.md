@@ -512,7 +512,9 @@ byte-oriented interface and handles periodic refresh.
 sorted free list with coalescing (this is `-nostdlib`, so there is no libc
 heap unless we provide one) — backed by that 8MB region. The internal
 64KB block-RAM (program/data/stack) is **not** part of this heap. See
-`libraries/Core/examples/MallocTest`.
+`libraries/Core/examples/MallocTest`. With Tools > Boot Mode: ... +
+SDRAM, the heap starts after the code image at the bottom of the SDRAM
+(see [Code in SDRAM](#code-in-sdram)).
 
 ## AI accelerator
 
@@ -721,7 +723,7 @@ boot the bitstream itself) is memory-mapped read-only at
 |---|---|
 | `0x000000` | Gowin bitstream |
 | `0x100000` | Program partition: a 4-byte little-endian size, then the program bytes (Boot Mode: Flash only) |
-| `0x110000` - end | Constant-data partition (`FLASH_DATA`) |
+| `0x110000` - end | Constant-data partition (`FLASH_DATA`), followed by the [Code in SDRAM](#code-in-sdram) image when that option is enabled |
 
 ### Boot Mode (Tools menu)
 
@@ -734,9 +736,22 @@ boot the bitstream itself) is memory-mapped read-only at
   the flash's program partition into SRAM at `0x400` on reset, then jumps
   there - the sketch itself is linked exactly the same way as in SRAM
   mode (same `0x400` start address, same `link_cmd.ld` layout), so nothing
-  about writing a sketch changes. `tools/upload.py` writes the program to
-  flash via `openFPGALoader -f -o <offset>` instead of reprogramming the
-  whole bitstream.
+  about writing a sketch changes. The board then starts the sketch by
+  itself at power-up. `tools/upload.py` writes the core bitstream to
+  flash (replacing whatever bitstream was stored there, e.g. the demo
+  the board shipped with) and the program to the program partition, via
+  `openFPGALoader -f`. The core bitstream is the same for every sketch,
+  so it is built once and cached, and the upload only rewrites it when it
+  changed (after a core update or a change to a gateware Tools option) -
+  it remembers the last one it wrote in
+  `~/.cache/nanotang/flashed_bitstream.sha256`. If the flash was changed
+  by other means, or for another board, upload with
+  `NANOTANG_FORCE_BITSTREAM=1` set to write it anyway.
+  The SRAM modes never change the bitstream in flash: after a power
+  cycle, the board boots whatever is stored there.
+- **SRAM + SDRAM** / **Flash + SDRAM**: the same two modes for sketches
+  larger than the 64KB SRAM - code off the hot path runs from the
+  embedded SDRAM instead, see [Code in SDRAM](#code-in-sdram).
 
 ### Constant data (`FLASH_DATA`)
 
@@ -778,14 +793,61 @@ section's raw bytes from the compiled ELF; `tools/upload.py` writes them
 to the flash's data partition as part of every upload, in either boot
 mode. See `libraries/Core/examples/FlashDataTest`.
 
+### Code in SDRAM
+
+Code, constants, variables and stack normally all share the 64KB
+internal SRAM. For sketches that don't fit, such as an MP3 player built
+on audio-tools, SD and the helix decoder (about 125KB), select **Tools >
+Boot Mode: SRAM + SDRAM** (or **Flash + SDRAM**, which adds the fast
+uploads of Boot Mode: Flash). The sketch is then linked with
+`cores/tangnano20k/link_cmd_sdram.ld`:
+
+- **Kept in SRAM**: the core (interrupt dispatch, timing, digital I/O),
+  libgcc's integer and single-precision `float` helpers, the helix MP3
+  decoder, and the bundled I2S, PWMAudio, SPI, Wire, SoftwareSerial,
+  DMA, TangTimer, Servo, WS2812 and CAN libraries. The linker places code
+  by library, so the timing-sensitive code keeps its speed.
+- **Moved to SDRAM**: all other code and constants (the sketch itself,
+  other libraries, `double` math, strings), up to 1MB. Variables and
+  the stack stay in SRAM.
+
+Override the placement per function with `SRAM_CODE` (keep it in SRAM,
+for example an interrupt callback in the sketch) or `SDRAM_CODE` (move
+it out), both from `cores/tangnano20k/tangnano20k_soc.h`:
+
+```cpp
+SRAM_CODE void onTimer() { ... }
+```
+
+How it works: SDRAM is empty at power-up, and the bitstream can only
+preload the block RAM. So the SDRAM part is stored in the flash's
+constant-data partition (`tools/build_bitstream.py` adds it to
+`data.bin`, `tools/upload.py` writes it before the program), and
+`startup.S` copies it into SDRAM on reset, before any constructor runs.
+The heap (see [Heap / `malloc`](#heap--malloc)) then starts after it.
+
+Costs:
+
+- **Speed**: code in SDRAM runs about 2.4x slower than in SRAM (every
+  instruction fetch is an SDRAM access; measured on the board at 27MHz
+  with `libraries/Core/examples/SdramCodeTest`). Fine for setup, file
+  handling and logging; keep hot loops in SRAM.
+- **Boot time**: the copy reads the flash at about 510 clocks per word
+  (fewer with Flash Cache), about 0.15s for a 64KB image at 54MHz.
+- **Flash writes**: every upload writes the image to the flash, in
+  either Boot Mode.
+- The "program storage" size the IDE reports only counts the SRAM part.
+
 ## CPU features
 
-All three are disabled by default. Measured on the board with a
-benchmark (20,000 operations each, 27MHz):
+Hardware Multiply/Divide is enabled by default; Barrel Shifter and
+Compressed Instructions are disabled. Measured on the board with a
+benchmark (20,000 operations each, 27MHz), each option against a
+baseline with all three disabled:
 
 | | Integer divide | Integer multiply | `float` math | Shifts |
 |---|---|---|---|---|
-| Default | 567ms | 611ms | 1,516ms | 42ms |
+| All three disabled | 567ms | 611ms | 1,516ms | 42ms |
 | Hardware Multiply/Divide | 9.5x faster | 19.6x faster | 1.6x faster | - |
 | Barrel Shifter | 8% faster | 7% faster | 15% faster | 17% faster |
 | Compressed Instructions | same | same | same | same |

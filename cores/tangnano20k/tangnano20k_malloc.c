@@ -14,8 +14,14 @@
 #include <stdint.h>
 #include <string.h>
 
-#define HEAP_BASE ((uint8_t *)0x10000000UL)
-#define HEAP_SIZE (8UL * 1024UL * 1024UL)
+/* The heap starts after the code/constants image that Tools > Code in
+ * SDRAM copies to the bottom of the SDRAM (link_cmd_sdram.ld); both
+ * linker scripts define __sdram_img_end, as the SDRAM base when there is
+ * no such image. */
+extern char __sdram_img_end[];
+#define SDRAM_END (0x10000000UL + 8UL * 1024UL * 1024UL)
+#define HEAP_BASE ((uint8_t *)(((uintptr_t)__sdram_img_end + 15UL) & ~15UL))
+#define HEAP_SIZE (SDRAM_END - (uintptr_t)HEAP_BASE)
 #define ALIGNMENT 8UL
 
 typedef struct block_header {

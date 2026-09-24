@@ -23,7 +23,7 @@ tangnano20k.build.core=tangnano20k
 tangnano20k.build.variant=tangnano20k
 tangnano20k.build.mcu=picorv32
 tangnano20k.build.board=TANGNANO20K
-tangnano20k.build.march_m=
+tangnano20k.build.march_m=m
 tangnano20k.build.march_c=
 tangnano20k.build.mabi=ilp32
 tangnano20k.build.sram_addr_width=14
@@ -97,12 +97,31 @@ tangnano20k.menu.exceptions.enabled.build.exceptions_flags=-fexceptions
 # onboard SPI flash instead; because that stub never changes per-sketch,
 # the bitstream itself only needs rebuilding when the *core* changes, and
 # ordinary uploads become a fast flash write - see docs/BUILDING.md and
-# docs/PERIPHERALS.md "Flash". Defaults to SRAM since Flash mode needs a
-# one-time bitstream-flash step most sketches don't need to think about.
+# docs/PERIPHERALS.md "Flash". The upload writes that fixed core
+# bitstream to flash (only when it changed) and the sketch after it, so
+# the board starts the sketch by itself at power-up.
+#
+# The "+ SDRAM" entries are for sketches too big for the 64KB internal
+# SRAM: they link with link_cmd_sdram.ld, which keeps the core, libgcc's
+# integer/float helpers, the helix MP3 decoder and the timing-sensitive
+# bundled libraries in SRAM and puts all other code and constants in the
+# embedded SDRAM. That code runs about 2.4x slower, and every upload also
+# writes it to the flash data partition, from where startup.S copies it
+# into SDRAM on reset. Independent of where the SRAM part comes from, so
+# both SRAM and Flash have a "+ SDRAM" variant. See docs/PERIPHERALS.md
+# "Code in SDRAM".
 tangnano20k.menu.boot_mode.sram=SRAM (Default)
 tangnano20k.menu.boot_mode.sram.build.boot_flash=0
+tangnano20k.menu.boot_mode.sram.build.ldscript=link_cmd.ld
 tangnano20k.menu.boot_mode.flash=Flash (fast uploads)
 tangnano20k.menu.boot_mode.flash.build.boot_flash=1
+tangnano20k.menu.boot_mode.flash.build.ldscript=link_cmd.ld
+tangnano20k.menu.boot_mode.sram_sdram=SRAM + SDRAM (large sketches)
+tangnano20k.menu.boot_mode.sram_sdram.build.boot_flash=0
+tangnano20k.menu.boot_mode.sram_sdram.build.ldscript=link_cmd_sdram.ld
+tangnano20k.menu.boot_mode.flash_sdram=Flash + SDRAM (large sketches, fast uploads)
+tangnano20k.menu.boot_mode.flash_sdram.build.boot_flash=1
+tangnano20k.menu.boot_mode.flash_sdram.build.ldscript=link_cmd_sdram.ld
 
 # Tools > SPI Buses / I2C Buses. Independent, since - unlike what a single
 # combined toggle used to imply - the primary SPI (microSD slot's pins) and
@@ -134,7 +153,7 @@ tangnano20k.menu.i2c_buses.none.build.i2c_count=0
 tangnano20k.menu.i2c_buses.two=Two
 tangnano20k.menu.i2c_buses.two.build.i2c_count=2
 
-# Tools > Hardware Multiply/Divide. Disabled by default: this changes the
+# Tools > Hardware Multiply/Divide. Enabled by default: this changes the
 # CPU's actual instruction set (picorv32's M-extension, ENABLE_MUL/
 # ENABLE_DIV/ENABLE_FAST_MUL in top.v), so the compiler flag and the
 # gateware MUST always change together - a sketch compiled expecting
@@ -149,14 +168,14 @@ tangnano20k.menu.i2c_buses.two.build.i2c_count=2
 # for rv32ima, and its routines (64-bit division, all software floating
 # point) contain mul/div instructions a plain RV32I CPU traps on - found
 # on real hardware, where the first printf("%lu") hung the CPU.
-tangnano20k.menu.hw_muldiv.disabled=Disabled (Default)
-tangnano20k.menu.hw_muldiv.disabled.build.march_m=
-tangnano20k.menu.hw_muldiv.disabled.build.libgcc_path={compiler.path}../lib/gcc/riscv64-zephyr-elf/12.2.0/rv32i_zicsr_zifencei/ilp32/libgcc.a
-tangnano20k.menu.hw_muldiv.disabled.build.hw_muldiv=0
-tangnano20k.menu.hw_muldiv.enabled=Enabled
+tangnano20k.menu.hw_muldiv.enabled=Enabled (Default)
 tangnano20k.menu.hw_muldiv.enabled.build.march_m=m
 tangnano20k.menu.hw_muldiv.enabled.build.libgcc_path={compiler.path}../lib/gcc/riscv64-zephyr-elf/12.2.0/rv32im_zicsr_zifencei/ilp32/libgcc.a
 tangnano20k.menu.hw_muldiv.enabled.build.hw_muldiv=1
+tangnano20k.menu.hw_muldiv.disabled=Disabled (fewer LUTs)
+tangnano20k.menu.hw_muldiv.disabled.build.march_m=
+tangnano20k.menu.hw_muldiv.disabled.build.libgcc_path={compiler.path}../lib/gcc/riscv64-zephyr-elf/12.2.0/rv32i_zicsr_zifencei/ilp32/libgcc.a
+tangnano20k.menu.hw_muldiv.disabled.build.hw_muldiv=0
 
 # Tools > I2S Input. Disabled by default: wires GPIO6 to the I2S
 # peripheral's receive input for an external I2S microphone sharing the

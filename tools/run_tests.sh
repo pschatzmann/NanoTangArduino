@@ -126,6 +126,7 @@ CFG
       AIAccelerator*) echo ":ai_accel=enabled" ;;
       ExtraSPII2C*) echo ":spi_buses=two,i2c_buses=two" ;;
       CAN*) echo ":can=enabled" ;;
+      SdramCodeTest) echo ":boot_mode=sram_sdram" ;;
       *) echo "" ;;
     esac
   }
@@ -200,7 +201,7 @@ CFG
         build "$(basename "$dir") [$key]" "$menu" "$dir" fpga
       done
       if [ "$UTILIZATION" = "1" ]; then
-        for menu in ":compressed=enabled" ":barrel_shifter=enabled" ":hw_muldiv=enabled" ":flash_cache=enabled" ":spi_buses=none,i2c_buses=none"; do
+        for menu in ":compressed=enabled" ":barrel_shifter=enabled" ":hw_muldiv=disabled" ":flash_cache=enabled" ":spi_buses=none,i2c_buses=none"; do
           build "Blink [$menu]" "$menu" "$ROOT/libraries/Core/examples/Blink/" fpga
         done
       fi

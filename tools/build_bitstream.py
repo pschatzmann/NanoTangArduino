@@ -475,8 +475,15 @@ def main():
     # FLASH_DATA payload, independent of boot_flash - empty (0 bytes) if the
     # sketch doesn't use any (objcopy's --only-section produces an empty,
     # valid file rather than erroring when the section doesn't exist).
+    # With Tools > Boot Mode: ... + SDRAM it also carries .sdram_image,
+    # whose load address (LMA) follows .flash_data in the same partition
+    # (see link_cmd_sdram.ld) - -O binary lays sections out by LMA, so
+    # this is one contiguous blob starting at the partition's base.
     data_bin_path = build_dir / "data.bin"
-    run([objcopy, "-O", "binary", "--only-section=.flash_data", str(elf_path), str(data_bin_path)])
+    run([
+        objcopy, "-O", "binary", "--only-section=.flash_data", "--only-section=.sdram_image",
+        str(elf_path), str(data_bin_path),
+    ])
 
     options = (
         f"ai_accel={int(ai_accel)},spi_count={spi_count},i2c_count={i2c_count},"
@@ -504,14 +511,21 @@ def main():
         # The sketch's own program (0x400 onward), extracted separately for
         # tools/upload.py to write to flash instead of baking it into SRAM.
         # objcopy's binary output starts at the lowest remaining section's
-        # address, so this file's first byte is SRAM address 0x400's byte -
-        # exactly what boot.S's copy loop expects to receive.
-        prog_flash_path = build_dir / "prog_flash.bin"
+        # address, so the program's first byte is SRAM address 0x400's
+        # byte. boot.S expects the partition to start with the program's
+        # size (4 bytes, little-endian) followed by those bytes, so the
+        # header is prepended here - without it boot.S took the first
+        # instruction for the size and copied from 4 bytes too far on.
+        prog_raw_path = build_dir / "prog_flash_raw.bin"
         run([
             objcopy, "-O", "binary",
             "-R", ".text.irq", "-R", ".irq_scratch", "-R", ".text.boot", "-R", ".flash_data",
-            str(elf_path), str(prog_flash_path),
+            "-R", ".sdram_image",
+            str(elf_path), str(prog_raw_path),
         ])
+        prog = prog_raw_path.read_bytes()
+        prog_flash_path = build_dir / "prog_flash.bin"
+        prog_flash_path.write_bytes(len(prog).to_bytes(4, "little") + prog)
 
         cache_key = core_bitstream_cache_key(bin_path, options, version_stamp)
         cached_fs = CACHE_DIR / f"{cache_key}.fs"
@@ -523,7 +537,7 @@ def main():
             return 0
     else:
         bin_path = build_dir / "prog.bin"
-        run([objcopy, "-O", "binary", "-R", ".flash_data", str(elf_path), str(bin_path)])
+        run([objcopy, "-O", "binary", "-R", ".flash_data", "-R", ".sdram_image", str(elf_path), str(bin_path)])
 
         if os.environ.get("NANOTANG_NO_ROUTED_CACHE") != "1":
             routed_dir = ROUTED_CACHE_DIR / routed_cache_key(options, version_stamp)

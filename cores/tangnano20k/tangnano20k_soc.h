@@ -187,6 +187,16 @@
 #undef PROGMEM
 #define PROGMEM FLASH_DATA
 
+/* Per-function overrides for Tools > Boot Mode: ... + SDRAM
+ * (link_cmd_sdram.ld), which otherwise places code by library - see
+ * docs/PERIPHERALS.md "Code in SDRAM". SRAM_CODE keeps a function in the
+ * fast internal SRAM (e.g. an interrupt callback in the sketch, which
+ * would otherwise run from the slower SDRAM); SDRAM_CODE moves one out
+ * of it. Both are no-ops with the default setting, where all code is in
+ * SRAM. */
+#define SRAM_CODE __attribute__((section(".sram_text"), noinline))
+#define SDRAM_CODE __attribute__((section(".sdram_text"), noinline))
+
 #define TANGNANO20K_I2S_CTRL_PA_EN (1UL << 0)
 #define TANGNANO20K_I2S_IRQEN_TX   (1UL << 0) // TX FIFO at most half full
 #define TANGNANO20K_I2S_IRQEN_RX   (1UL << 1) // RX FIFO has a sample

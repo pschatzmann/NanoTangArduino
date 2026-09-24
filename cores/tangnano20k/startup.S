@@ -9,6 +9,30 @@
 _start:
 	la   sp, __stack_top
 
+	/* Tools > Boot Mode: ... + SDRAM (link_cmd_sdram.ld) - copy the
+	 * code/constants image from the flash data partition into SDRAM
+	 * before anything can call into it (constructors may live there).
+	 * Empty (start == end) with the default link_cmd.ld. */
+	la   a0, __sdram_img_start
+	la   a1, __sdram_img_end
+	beq  a0, a1, sdram_copy_done
+	/* sdram.v ignores requests during its 200us power-on delay instead
+	 * of stalling them, so first wait for the free-running micros
+	 * counter (systick.v, reset together with the CPU) to pass that. */
+	li   t0, 0x80000024
+	li   t1, 300
+wait_sdram:
+	lw   t2, 0(t0)
+	bltu t2, t1, wait_sdram
+	la   a2, __sdram_img_load
+copy_sdram:
+	lw   t0, 0(a2)
+	sw   t0, 0(a0)
+	addi a0, a0, 4
+	addi a2, a2, 4
+	bltu a0, a1, copy_sdram
+sdram_copy_done:
+
 	/* Clear .bss */
 	la   a0, __bss_start
 	la   a1, __bss_end

@@ -26,6 +26,7 @@ SPI flash).
 - [Interrupts and `TangTimer`](docs/PERIPHERALS.md#interrupts)
 - [DMA](docs/PERIPHERALS.md#dma) memory copy, blocking or in the background
 - [Booting from flash and `FLASH_DATA`](docs/PERIPHERALS.md#flash)
+- [Code in SDRAM](docs/PERIPHERALS.md#code-in-sdram) for sketches larger than the 64KB SRAM
 - [CPU options](docs/PERIPHERALS.md#cpu-features): compressed instructions,
   barrel shifter, hardware multiply/divide, clock speed
 

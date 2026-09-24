@@ -93,7 +93,7 @@ FPGA flow (see [Build times](#build-times-and-the-routed-design-cache)).
 |---|---|---|
 | Optimize | `optimize`: `small` (`-Os`), `fast` (`-O2`), `fastest` (`-O3`), `debug` (`-Og -g`) | Compiler optimization. The whole program has to fit in 64KB of SRAM, so `-O2`/`-O3` can push a large sketch over; debug info costs no SRAM |
 | Clock Speed | `f_cpu`: `normal` (27MHz), `low_power` (13.5MHz), `overclock` (54MHz) | [Clock architecture](PERIPHERALS.md#clock-architecture) |
-| Boot Mode | `boot_mode`: `sram`, `flash` | Run the sketch from SRAM baked into the bitstream, or boot it from the onboard flash - see [Flash](PERIPHERALS.md#flash) |
+| Boot Mode | `boot_mode`: `sram`, `flash`, `sram_sdram`, `flash_sdram` | Run the sketch from SRAM baked into the bitstream, or boot it from the onboard flash; the `_sdram` variants also put code off the hot path in SDRAM for sketches larger than the 64KB SRAM - see [Flash](PERIPHERALS.md#flash) and [Code in SDRAM](PERIPHERALS.md#code-in-sdram) |
 | SPI Buses / I2C Buses | `spi_buses`, `i2c_buses`: `one`, `none`, `two` | Remove the port, or add `SPI2` (GPIO0-3) / `Wire2` (GPIO4-5) - see [SPI, I2C](PERIPHERALS.md#spi-i2c-wire-and-the-sd-card) |
 | SD Card | `sd_card`: `disabled`, `enabled` | Allows `SD.h` to compile; it's GPLv3 - see [SD card](PERIPHERALS.md#sd-card). No gateware change |
 | I2S Input | `i2s_rx`: `disabled`, `enabled` | Microphone input on `GPIO6` - see [Audio (I2S)](PERIPHERALS.md#audio-i2s) |
@@ -101,7 +101,7 @@ FPGA flow (see [Build times](#build-times-and-the-routed-design-cache)).
 | CAN | `can`: `disabled`, `enabled` | CAN controller, pins chosen at run time - see [CAN](PERIPHERALS.md#can) |
 | AI Accelerator | `ai_accel`: `disabled`, `enabled` | INT8 dot-product engine - see [AI accelerator](PERIPHERALS.md#ai-accelerator) |
 | Flash Cache | `flash_cache`: `disabled`, `enabled` | 512-byte cache for flash reads - see [Flash](PERIPHERALS.md#flash) |
-| Hardware Multiply/Divide | `hw_muldiv`: `disabled`, `enabled` | RV32IM CPU and compiler flags, together - see [CPU features](PERIPHERALS.md#cpu-features) |
+| Hardware Multiply/Divide | `hw_muldiv`: `enabled`, `disabled` | RV32IM CPU and compiler flags, together - see [CPU features](PERIPHERALS.md#cpu-features) |
 | Compressed Instructions | `compressed`: `disabled`, `enabled` | RV32IC CPU and compiler flags, together - see [CPU features](PERIPHERALS.md#cpu-features) |
 | Barrel Shifter | `barrel_shifter`: `disabled`, `enabled` | Single-cycle shifts, gateware only - see [CPU features](PERIPHERALS.md#cpu-features) |
 | C++ Exceptions | `exceptions`: `disabled`, `enabled` | Compiles with `-fexceptions`, see below |
@@ -139,18 +139,20 @@ somewhere with room, e.g. `TMPDIR=~/tmp arduino-cli compile ...`.
 ## FPGA resource usage
 
 How much of the GW2AR-18's logic each Tools option costs, from place &
-route. Each row is the default configuration (one SPI bus, one I2C bus,
-27MHz, SRAM boot) with that one option added:
+route. Each row is the baseline configuration (one SPI bus, one I2C bus,
+27MHz, SRAM boot, Hardware Multiply/Divide off) with that one option
+added. These were measured before Hardware Multiply/Divide became the
+default, so today's default is the baseline plus that row:
 
-| Configuration | LUT4 (of 20,736) | vs. default | Max clock after routing |
+| Configuration | LUT4 (of 20,736) | vs. baseline | Max clock after routing |
 |---|---|---|---|
 | Minimal (Tools > SPI Buses / I2C Buses: None) | 10,327 (50%) | -426 | 79.8 MHz |
-| **Default** | **10,753 (52%)** | - | 74.3 MHz |
+| **Baseline** | **10,753 (52%)** | - | 74.3 MHz |
 | + Barrel Shifter | 10,678 | ~0 | not measured |
 | + SPI Buses: Two | 11,173 | +420 | 71.9 MHz |
 | + I2C Buses: Two | 11,284 | +531 | 73.7 MHz |
 | + Compressed Instructions | 11,403 | +650 | 66.8 MHz |
-| + Hardware Multiply/Divide | 11,476 | +723 | not measured |
+| + Hardware Multiply/Divide (default) | 11,476 | +723 | not measured |
 | + PWM Audio | 11,775 | +1,022 | 71.6 MHz |
 | + I2S Input | 11,924 | +1,171 | 74.4 MHz |
 | + Flash Cache | 12,983 | +2,230 | not measured |
@@ -176,6 +178,15 @@ Notes:
 - Measured on 2026-09-23 with yosys 0.33, nextpnr-himbaechel 0.11.1 and
   apicula 0.33. `tools/run_tests.sh --utilization` prints these figures
   for the option combinations it builds.
+
+## Trying changes in the Arduino IDE
+
+The IDE uses the core installed by Boards Manager, not this checkout.
+`tools/install_local.sh` copies the checkout over that installation
+(`-n` for a dry run first). The IDE caches each board's Tools menus per
+core version, so the script also deletes that cache
+(`~/.config/arduino-ide/"Local Storage"`) - quit the IDE before running
+it, or the cache is left alone and the old menus stay.
 
 ## Verifying changes
 

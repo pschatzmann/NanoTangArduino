@@ -85,6 +85,11 @@ SECTIONS
 
   .text 0x400 : {
     *(.text.start)
+    /* SRAM_CODE/SDRAM_CODE (tangnano20k_soc.h) only matter for Tools >
+     * Boot Mode: ... + SDRAM (link_cmd_sdram.ld) - here everything is
+     * in SRAM anyway. */
+    *(.sram_text .sram_text.*)
+    *(.sdram_text .sdram_text.*)
     *(.text .text.*)
   } > SRAM
 
@@ -123,6 +128,12 @@ SECTIONS
   .flash_data : {
     *(.flash_data)
   } > FLASH_DATA
+
+  /* No code in SDRAM (see link_cmd_sdram.ld): an empty image, so
+   * startup.S skips its copy and the heap starts at the SDRAM base. */
+  __sdram_img_start = 0x10000000;
+  __sdram_img_end = 0x10000000;
+  __sdram_img_load = 0;
 
   _end = .;
 }

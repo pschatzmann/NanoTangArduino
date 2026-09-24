@@ -34,6 +34,8 @@ otherwise, the other Tools options were at their defaults.
 | CAN (Tools > CAN) | Internal loopback mode: frames sent and received back (no transceiver) |
 | Hardware Multiply/Divide, Barrel Shifter, Compressed Instructions, 54MHz clock | A benchmark runs correctly with each; results in [CPU features](PERIPHERALS.md#cpu-features). At 54MHz `Serial` and the timers keep the right speed |
 | AI accelerator | A dot product of all-ones vectors returns the expected 32 per tap |
+| Boot Mode: SRAM, SRAM + SDRAM, Flash + SDRAM | Sketches start in each mode; with Flash + SDRAM the sketch starts again by itself after unplugging and replugging the board (core bitstream and program in flash). Flash starts Blink after the upload |
+| Code in SDRAM (Boot Mode: SRAM + SDRAM) | `SdramCodeTest`: the image is copied from flash into SDRAM at reset, a function runs from there with the same result as its SRAM copy (2.4x slower at 27MHz), and the heap starts after the image |
 
 ## Not yet tested on the board
 
@@ -42,8 +44,10 @@ otherwise, the other Tools options were at their defaults.
 - `SoftwareSerial` (needs a jumper wire), CAN on a real bus (needs a
   transceiver), PWM Audio, I2S input
 - The AI accelerator with signed and mixed values (only an all-ones test so far)
-- Tools > Boot Mode: Flash and `FLASH_DATA`: not tried, because they
-  overwrite what's stored in the board's flash
+- `FLASH_DATA` constants on their own (the flash data partition itself
+  works - see Boot Mode: SRAM + SDRAM above)
+- Tools > Boot Mode: Flash starting the sketch after a power cycle (the
+  same mechanism works with Flash + SDRAM, see above)
 - The 13.5MHz clock
 
 ## Testing on the board yourself

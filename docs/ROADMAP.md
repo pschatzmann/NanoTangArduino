@@ -22,5 +22,6 @@
 - **True XIP** (executing directly from flash, not just copying the
   program to SRAM at boot) needs an instruction cache to avoid a severe
   per-fetch latency penalty (picorv32 has no instruction cache and no
-  separate instruction bus).
+  separate instruction bus). Tools > Boot Mode: ... + SDRAM already runs code from
+  SDRAM without a cache; an instruction cache would speed up both.
 - **SPI Client API** Add a SPI Client API so that we can implement devices
