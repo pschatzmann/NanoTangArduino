@@ -48,9 +48,10 @@ tar -c \
   --exclude='.github' \
   --exclude='ArduinoCore-API' \
   --exclude='dist' \
+  --exclude='platform.local.txt' \
   --exclude='tools/package' \
   --exclude='*.o' --exclude='*.elf' --exclude='*.bin' --exclude='*.fs' \
-  --exclude='build' \
+  --exclude='build' --exclude='__pycache__' \
   -C "$ROOT" . \
   | tar -x -C "$BOARD_STAGE/arduino-tangnano20k"
 tar -cjf "$DIST/$BOARD_ARCHIVE" -C "$BOARD_STAGE" arduino-tangnano20k
