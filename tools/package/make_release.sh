@@ -47,7 +47,7 @@ tar -c \
   --exclude='.git*' \
   --exclude='.github' \
   --exclude='ArduinoCore-API' \
-  --exclude='dist' \
+  --exclude='dist' --exclude='.claude' --exclude='.vscode' \
   --exclude='platform.local.txt' \
   --exclude='tools/package' \
   --exclude='*.o' --exclude='*.elf' --exclude='*.bin' --exclude='*.fs' \
@@ -56,57 +56,54 @@ tar -c \
   | tar -x -C "$BOARD_STAGE/arduino-tangnano20k"
 tar -cjf "$DIST/$BOARD_ARCHIVE" -C "$BOARD_STAGE" arduino-tangnano20k
 
-echo "== Packaging RISC-V toolchain ($TOOL_ARCHIVE) =="
-if [ ! -d "$ZEPHYR_SDK_DIR/riscv64-zephyr-elf" ]; then
-  echo "ERROR: $ZEPHYR_SDK_DIR/riscv64-zephyr-elf not found - set ZEPHYR_SDK_DIR" >&2
-  exit 1
-fi
-tar -cjf "$DIST/$TOOL_ARCHIVE" -C "$ZEPHYR_SDK_DIR" riscv64-zephyr-elf
-
-echo "== Computing checksums/sizes =="
-board_sha=$(sha256sum "$DIST/$BOARD_ARCHIVE" | cut -d' ' -f1)
-board_size=$(stat --format=%s "$DIST/$BOARD_ARCHIVE")
-tool_sha=$(sha256sum "$DIST/$TOOL_ARCHIVE" | cut -d' ' -f1)
-tool_size=$(stat --format=%s "$DIST/$TOOL_ARCHIVE")
-
 RELEASE_URL="https://github.com/${GITHUB_REPO}/releases/download/v${VERSION}"
 
-# macOS/Windows toolchain archives are optional and produced separately by
-# tools/package/fetch_zephyr_toolchains.sh (they're downloaded/repackaged
-# from Zephyr's own prebuilt releases, not built on this machine) - see
-# docs/RELEASING.md. When dist/toolchains_manifest.tsv exists (that
-# script's output: host<TAB>archiveFileName<TAB>sha256<TAB>size per line),
-# merge those hosts in as additional tools[].systems entries alongside the
-# Linux x86_64 one built above; otherwise the index stays Linux-only, same
-# as before this script existed.
-EXTRA_SYSTEMS_JSON="[]"
-if [ -f "$DIST/toolchains_manifest.tsv" ]; then
-  echo "== Merging dist/toolchains_manifest.tsv (macOS/Windows toolchains) =="
-  EXTRA_SYSTEMS_JSON="$(python3 - "$DIST/toolchains_manifest.tsv" "$RELEASE_URL" <<'PYEOF'
-import csv, json, sys
-
-manifest_path, release_url = sys.argv[1], sys.argv[2]
-systems = []
-with open(manifest_path, newline="") as f:
-    for host, archive, sha, size in csv.reader(f, delimiter="\t"):
-        systems.append({
-            "host": host,
-            "url": f"{release_url}/{archive}",
-            "archiveFileName": archive,
-            "checksum": f"SHA-256:{sha}",
-            "size": size,
-        })
-print(json.dumps(systems))
-PYEOF
-)"
+# The RISC-V toolchain only changes with the Zephyr SDK, so it doesn't have
+# to be repackaged for every release: without $ZEPHYR_SDK_DIR, the index's
+# existing ${TOOL_NAME} ${TOOLCHAIN_VERSION} entry (whose archives stay on
+# the release that first published them) is kept as it is.
+TOOL_SYSTEMS_JSON=""
+if [ -d "$ZEPHYR_SDK_DIR/riscv64-zephyr-elf" ]; then
+  echo "== Packaging RISC-V toolchain ($TOOL_ARCHIVE) =="
+  rm -f "$DIST/$TOOL_ARCHIVE"
+  tar -cjf "$DIST/$TOOL_ARCHIVE" -C "$ZEPHYR_SDK_DIR" riscv64-zephyr-elf
+  # Linux x86_64, built above, plus the macOS/Windows archives from
+  # tools/package/fetch_zephyr_toolchains.sh (downloaded/repackaged from
+  # Zephyr's own prebuilt releases) when dist/toolchains_manifest.tsv
+  # exists - see docs/RELEASING.md.
+  printf '%s\t%s\t%s\t%s\n' "$HOST" "$TOOL_ARCHIVE" \
+    "$(sha256sum "$DIST/$TOOL_ARCHIVE" | cut -d' ' -f1)" \
+    "$(stat --format=%s "$DIST/$TOOL_ARCHIVE")" > "$DIST/toolchain_linux_manifest.tsv"
+  TOOL_SYSTEMS_JSON="$(python3 "$ROOT/tools/package/manifest_systems.py" "$RELEASE_URL" \
+    "$DIST/toolchain_linux_manifest.tsv" "$DIST/toolchains_manifest.tsv")"
+  rm -f "$DIST/toolchain_linux_manifest.tsv"
+else
+  echo "== $ZEPHYR_SDK_DIR/riscv64-zephyr-elf not found - keeping the index's ${TOOL_NAME} ${TOOLCHAIN_VERSION} entry =="
 fi
 
+# FPGA tools (yosys, nextpnr-himbaechel, gowin_pack, openFPGALoader): the
+# archives tools/package/make_fpga_tools.py builds, listed in
+# dist/fpga_tools_manifest.tsv. Without it, the index's existing entry for
+# the version platform.txt pins is kept as it is.
+FPGA_TOOL_NAME="oss-cad-suite-gowin"
+FPGA_TOOL_VERSION="$(sed -n 's/^fpga_tools.path={runtime.tools.'"$FPGA_TOOL_NAME"'-\(.*\).path}$/\1/p' platform.txt)"
+[ -n "$FPGA_TOOL_VERSION" ] || { echo "ERROR: no fpga_tools.path line in platform.txt" >&2; exit 1; }
+FPGA_SYSTEMS_JSON=""
+if [ -f "$DIST/fpga_tools_manifest.tsv" ]; then
+  echo "== Merging dist/fpga_tools_manifest.tsv ($FPGA_TOOL_NAME $FPGA_TOOL_VERSION) =="
+  FPGA_SYSTEMS_JSON="$(python3 "$ROOT/tools/package/manifest_systems.py" "$RELEASE_URL" \
+    "$DIST/fpga_tools_manifest.tsv")"
+fi
+
+board_sha=$(sha256sum "$DIST/$BOARD_ARCHIVE" | cut -d' ' -f1)
+board_size=$(stat --format=%s "$DIST/$BOARD_ARCHIVE")
+
 echo "== Writing package_nanotang_index.json =="
-python3 - "$ROOT/package_nanotang_index.json" "$EXTRA_SYSTEMS_JSON" <<PYEOF
+python3 - "$ROOT/package_nanotang_index.json" "$TOOL_SYSTEMS_JSON" "$FPGA_SYSTEMS_JSON" <<PYEOF
 import json, os, sys
 
 path = sys.argv[1]
-extra_systems = json.loads(sys.argv[2])
+tool_systems, fpga_systems = sys.argv[2], sys.argv[3]
 
 new_platform = {
     "name": "Sipeed Tang Nano 20K (PicoRV32 SoC)",
@@ -120,19 +117,9 @@ new_platform = {
     "help": {"online": "https://github.com/${GITHUB_REPO}/blob/main/docs/BUILDING.md"},
     "boards": [{"name": "Tang Nano 20K (PicoRV32 SoC)"}],
     "toolsDependencies": [
-        {"packager": "nanotang", "name": "${TOOL_NAME}", "version": "${TOOLCHAIN_VERSION}"}
+        {"packager": "nanotang", "name": "${TOOL_NAME}", "version": "${TOOLCHAIN_VERSION}"},
+        {"packager": "nanotang", "name": "${FPGA_TOOL_NAME}", "version": "${FPGA_TOOL_VERSION}"},
     ]
-}
-new_tool = {
-    "name": "${TOOL_NAME}",
-    "version": "${TOOLCHAIN_VERSION}",
-    "systems": [{
-        "host": "${HOST}",
-        "url": "${RELEASE_URL}/${TOOL_ARCHIVE}",
-        "archiveFileName": "${TOOL_ARCHIVE}",
-        "checksum": "SHA-256:${tool_sha}",
-        "size": "${tool_size}"
-    }] + extra_systems
 }
 
 # Merge into the existing index (if any) instead of overwriting it, so
@@ -159,10 +146,17 @@ platforms.append(new_platform)
 platforms.sort(key=lambda p: tuple(int(x) for x in p["version"].split(".")))
 package["platforms"] = platforms
 
-tools = [t for t in package.get("tools", []) if t.get("version") != "${TOOLCHAIN_VERSION}"]
-tools.append(new_tool)
-tools.sort(key=lambda t: t["version"])
-package["tools"] = tools
+tools = package.setdefault("tools", [])
+for dep in new_platform["toolsDependencies"]:
+    systems = tool_systems if dep["name"] == "${TOOL_NAME}" else fpga_systems
+    existing = [t for t in tools if t["name"] == dep["name"] and t["version"] == dep["version"]]
+    if systems:
+        tools[:] = [t for t in tools if t not in existing]
+        tools.append({"name": dep["name"], "version": dep["version"], "systems": json.loads(systems)})
+    elif not existing:
+        sys.exit(f"ERROR: {dep['name']} {dep['version']} is neither in the index nor built "
+                 "into dist/ - see docs/RELEASING.md")
+tools.sort(key=lambda t: (t["name"], t["version"]))
 
 with open(path, "w") as f:
     json.dump(index, f, indent=2)

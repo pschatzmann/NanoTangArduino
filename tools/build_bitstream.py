@@ -3,7 +3,7 @@
 a program into the gateware's SRAM initialization files and running the
 open-source FPGA flow (yosys -> nextpnr-himbaechel -> gowin_pack).
 
-Usage: build_bitstream.py <prog.elf> <objcopy> <build_dir> [ai_accel] [boot_flash] [spi_count] [i2c_count] [hw_muldiv] [i2s_rx] [clk_freq_hz] [pll_idiv] [pll_fbdiv] [pll_odiv] [pwm_audio] [flash_cache] [compressed] [barrel_shifter] [can]
+Usage: build_bitstream.py [--tools-dir=<dir>] <prog.elf> <objcopy> <build_dir> [ai_accel] [boot_flash] [spi_count] [i2c_count] [hw_muldiv] [i2s_rx] [clk_freq_hz] [pll_idiv] [pll_fbdiv] [pll_odiv] [pwm_audio] [flash_cache] [compressed] [barrel_shifter] [can]
 
 ai_accel: "1" to synthesize the AI accelerator (gateware/src/ai_accel_bus.v
 and friends, integrated from NanoTangAI) into the bitstream, per the
@@ -125,6 +125,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from find_tool import (bundled_gowin_pack_cmd, find_tool, not_found_message,
+                       require_tool, take_tools_dir_arg)
+
 SRAM_ADDR_WIDTH = 14  # Must match gateware/src/sys_parameters.v and link_cmd.ld
 DEVICE = "GW2AR-LV18QN88C8/I7"
 FAMILY = "GW2A-18C"
@@ -172,36 +175,24 @@ def run(cmd, **kwargs):
     subprocess.run(cmd, check=True, **kwargs)
 
 
-# Where pip/conda/pipx/oss-cad-suite usually put gowin_pack - checked when
-# it isn't on PATH, e.g. because the Arduino IDE was started from the
-# desktop and never read the shell startup file that activates conda.
-GOWIN_PACK_DIRS = [
-    Path.home() / ".local" / "bin",
-    Path.home() / "miniconda3" / "bin",
-    Path.home() / "miniforge3" / "bin",
-    Path.home() / "mambaforge" / "bin",
-    Path.home() / "anaconda3" / "bin",
-    Path.home() / "oss-cad-suite" / "bin",
-    Path("/opt/conda/bin"),
-    Path("/opt/oss-cad-suite/bin"),
-]
+YOSYS_HINT = ("Install oss-cad-suite (https://github.com/YosysHQ/oss-cad-suite-build) "
+              "to ~/oss-cad-suite")
 
 _gowin_pack_cmd = None
 
 
 def gowin_pack_cmd():
     """The command that runs apicula's gowin_pack, as a list: $GOWIN_PACK if
-    set, else gowin_pack from PATH, else the apycula module if this Python
-    can import it, else gowin_pack from one of GOWIN_PACK_DIRS. Exits with
-    an explanation if none of them exists."""
+    set, else the bundled tools' gowin_pack or the one on PATH, else the
+    apycula module if this Python can import it, else gowin_pack from one of
+    find_tool.TOOL_DIRS. Exits with an explanation if none of them exists."""
     global _gowin_pack_cmd
     if _gowin_pack_cmd is not None:
         return _gowin_pack_cmd
-    env = os.environ.get("GOWIN_PACK")
-    if env:
-        _gowin_pack_cmd = [env]
+    if not os.environ.get("GOWIN_PACK") and bundled_gowin_pack_cmd():
+        _gowin_pack_cmd = bundled_gowin_pack_cmd()
         return _gowin_pack_cmd
-    found = shutil.which("gowin_pack")
+    found = find_tool("gowin_pack", fallback_dirs=False)
     if found:
         _gowin_pack_cmd = [found]
         return _gowin_pack_cmd
@@ -212,20 +203,15 @@ def gowin_pack_cmd():
             return _gowin_pack_cmd
     except ImportError:
         pass
-    for d in GOWIN_PACK_DIRS:
-        for name in ("gowin_pack", "gowin_pack.exe"):
-            candidate = d / name
-            if candidate.is_file() and os.access(candidate, os.X_OK):
-                _gowin_pack_cmd = [str(candidate)]
-                return _gowin_pack_cmd
-    sys.exit(
-        "error: gowin_pack (apicula) not found. It is not on PATH (the "
-        "Arduino IDE does not read ~/.bashrc, so conda/venv activations "
-        "there are not visible), the Python running this script ("
-        + sys.executable + ") cannot import apycula, and it is not in any of: "
-        + ", ".join(str(d) for d in GOWIN_PACK_DIRS)
-        + ". Install it with `pip install apycula`, or set the GOWIN_PACK "
-        "environment variable to its full path - see docs/BUILDING.md.")
+    found = find_tool("gowin_pack")
+    if found:
+        _gowin_pack_cmd = [found]
+        return _gowin_pack_cmd
+    sys.exit(not_found_message(
+        "gowin_pack", "apicula",
+        "The Python running this script (" + sys.executable + ") cannot "
+        "import apycula either. Install it with `pip install apycula` or "
+        "oss-cad-suite"))
 
 
 # Block RAM primitives: each output clock-enable port and the read-side
@@ -279,7 +265,8 @@ def build_version_stamp():
         if line.startswith("version="):
             lines.append("package " + line.split("=", 1)[1].strip())
     lines.append("script " + hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
-    for cmd in (["yosys", "-V"], ["nextpnr-himbaechel", "--version"]):
+    for name, flag in (("yosys", "-V"), ("nextpnr-himbaechel", "--version")):
+        cmd = [find_tool(name) or name, flag]
         try:
             r = subprocess.run(cmd, capture_output=True, text=True)
             lines.append((r.stdout + r.stderr).strip())
@@ -446,6 +433,7 @@ def patch_program(netlist, cellmap, columns):
 
 
 def main():
+    take_tools_dir_arg(sys.argv)
     if len(sys.argv) not in range(4, 20):
         sys.stderr.write(__doc__)
         return 1
@@ -621,10 +609,16 @@ def main():
     defines.append(f"-DPLL_ODIV_SEL={pll_odiv}")
     define = "read_verilog " + " ".join(defines) if defines else "read_verilog"
     json_path = build_dir / "top.json"
+    # Newer yosys (seen with 0.69) can leave $buf cells in the netlist -
+    # driving registers some of whose bits were optimized away - which
+    # nextpnr-himbaechel can't place ("no BELs remaining to implement cell
+    # type '$buf'"). simplemap turns them back into plain connections; with
+    # older yosys there are none and it does nothing.
     run([
-        "yosys",
+        require_tool("yosys", "Verilog synthesis", YOSYS_HINT),
         "-p",
-        f"{define} {' '.join(GATEWARE_SOURCES)}; synth_gowin -top top -json {json_path}",
+        f"{define} {' '.join(GATEWARE_SOURCES)}; synth_gowin -top top; "
+        f"simplemap t:$buf; opt_clean; write_json {json_path}",
     ], cwd=build_gateware)
     changed = fix_bram_oce(json_path)
     if changed:
@@ -632,7 +626,7 @@ def main():
 
     pnr_json = build_dir / "pnrtop.json"
     run([
-        "nextpnr-himbaechel",
+        require_tool("nextpnr-himbaechel", "place & route", YOSYS_HINT),
         "--json", str(json_path),
         "--write", str(pnr_json),
         "--device", DEVICE,

@@ -1,5 +1,5 @@
 name=Sipeed Tang Nano 20K (PicoRV32 SoC)
-version=0.2.1
+version=0.2.2
 
 # Path to the RISC-V toolchain: the Zephyr SDK's multilib
 # riscv64-zephyr-elf-gcc, which supports the rv32i2p0/ilp32 target our SoC
@@ -11,6 +11,14 @@ version=0.2.1
 # e.g. riscv32-unknown-elf-).
 compiler.path={runtime.tools.riscv-zephyr-elf-0.17.0.path}/bin/
 compiler.prefix=riscv64-zephyr-elf-
+
+# FPGA tools (yosys, nextpnr-himbaechel, apicula's gowin_pack,
+# openFPGALoader): a trimmed YosysHQ oss-cad-suite build, also installed
+# as a Boards Manager tool dependency and pinned to the version the
+# gateware was tested with (see tools/package/make_fpga_tools.py). Passed
+# to tools/build_bitstream.py and tools/upload.py, which search its bin/
+# before PATH - see tools/find_tool.py for the full lookup order.
+fpga_tools.path={runtime.tools.oss-cad-suite-gowin-2026.9.25.path}
 
 compiler.warning_flags=
 compiler.warning_flags.none=
@@ -195,7 +203,7 @@ recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" {compiler.c.elf.f
 # build (bake the program into SRAM init files, then yosys -> nextpnr ->
 # gowin_pack). Expect this to take noticeably longer than a normal
 # Arduino "compile" step - see docs/BUILDING.md.
-recipe.objcopy.hex.pattern=python3 "{runtime.platform.path}/tools/build_bitstream.py" "{build.path}/{build.project_name}.elf" "{compiler.path}{compiler.objcopy.cmd}" "{build.path}/fpga" "{build.ai_accel}" "{build.boot_flash}" "{build.spi_count}" "{build.i2c_count}" "{build.hw_muldiv}" "{build.i2s_rx}" "{build.clk_freq_hz}" "{build.pll_idiv}" "{build.pll_fbdiv}" "{build.pll_odiv}" "{build.pwm_audio}" "{build.flash_cache}" "{build.compressed}" "{build.barrel_shifter}" "{build.can}"
+recipe.objcopy.hex.pattern=python3 "{runtime.platform.path}/tools/build_bitstream.py" "--tools-dir={fpga_tools.path}" "{build.path}/{build.project_name}.elf" "{compiler.path}{compiler.objcopy.cmd}" "{build.path}/fpga" "{build.ai_accel}" "{build.boot_flash}" "{build.spi_count}" "{build.i2c_count}" "{build.hw_muldiv}" "{build.i2s_rx}" "{build.clk_freq_hz}" "{build.pll_idiv}" "{build.pll_fbdiv}" "{build.pll_odiv}" "{build.pwm_audio}" "{build.flash_cache}" "{build.compressed}" "{build.barrel_shifter}" "{build.can}"
 
 recipe.size.pattern="{compiler.path}{compiler.size.cmd}" -A "{build.path}/{build.project_name}.elf"
 # Everything except .flash_data lives in the one 64KB internal SRAM (see
@@ -213,4 +221,4 @@ recipe.size.regex.data=^(?:\.data|\.bss)\s+([0-9]+).*
 tools.tangnano20k_upload.cmd=python3
 tools.tangnano20k_upload.upload.params.verbose=
 tools.tangnano20k_upload.upload.params.quiet=
-tools.tangnano20k_upload.upload.pattern="{cmd}" "{runtime.platform.path}/tools/upload.py" "{build.boot_flash}" "{build.path}/fpga/prog.fs" "{build.path}/fpga/prog_flash.bin" "{build.path}/fpga/data.bin"
+tools.tangnano20k_upload.upload.pattern="{cmd}" "{runtime.platform.path}/tools/upload.py" "--tools-dir={fpga_tools.path}" "{build.boot_flash}" "{build.path}/fpga/prog.fs" "{build.path}/fpga/prog_flash.bin" "{build.path}/fpga/data.bin"

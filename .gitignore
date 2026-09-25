@@ -9,3 +9,4 @@ dist/
 platform.local.txt
 .claude/
 .vscode/
+__pycache__/

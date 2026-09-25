@@ -11,27 +11,30 @@
   need one yourself; override `compiler.path`/`compiler.prefix` in a
   `platform.local.txt` next to `platform.txt` if yours lives elsewhere or
   uses a different prefix (e.g. `riscv32-unknown-elf-`).
-- **yosys** (Verilog synthesis). Tested with 0.33, what Linux
-  distributions ship; its Gowin block-RAM mapping has a bug that
-  `tools/build_bitstream.py` corrects automatically (see
-  [Architecture: gateware notes](ARCHITECTURE.md#gateware-notes)). Newer
-  versions work too.
-- **nextpnr-himbaechel**, built with the Gowin backend, for place & route.
-  Not all yosys/apicula installs include this by default — the easiest path
-  is the [YosysHQ oss-cad-suite](https://github.com/YosysHQ/oss-cad-suite-build)
-  bundle, which ships yosys + nextpnr-himbaechel + apicula + openFPGALoader
-  together. If building nextpnr from source, configure it with `-DARCH=himbaechel`.
-- **[Apicula](https://github.com/YosysHQ/apicula)** (`gowin_pack`) for
-  producing the final Gowin bitstream. The Arduino IDE started from the
-  desktop does not read `~/.bashrc`, so a `gowin_pack` that is only on
-  PATH through a conda/venv activation there is invisible to it.
-  `tools/build_bitstream.py` therefore also tries `python3 -m
-  apycula.gowin_pack` and the usual install folders (`~/.local/bin`,
-  `~/miniconda3/bin`, `~/miniforge3/bin`, `~/anaconda3/bin`,
-  `~/oss-cad-suite/bin`, ...). If yours is somewhere else, set the
-  `GOWIN_PACK` environment variable to its full path.
-- **openFPGALoader** for programming the board over USB.
+- **FPGA tools**: yosys (synthesis), nextpnr-himbaechel with the Gowin
+  backend (place & route), [Apicula](https://github.com/YosysHQ/apicula)'s
+  `gowin_pack` (bitstream) and openFPGALoader (programming the board over
+  USB). Installing via Boards Manager gets you all four automatically, as
+  the `oss-cad-suite-gowin` tool: the parts of a
+  [YosysHQ oss-cad-suite](https://github.com/YosysHQ/oss-cad-suite-build)
+  build this flow needs, pinned to the version the gateware was tested
+  with (`fpga_tools.path` in `platform.txt`; see [Releasing](RELEASING.md)).
+  Installing manually, you need them yourself - the easiest way is to
+  unpack a full oss-cad-suite to `~/oss-cad-suite`. yosys 0.33 (what Linux
+  distributions ship) through 0.69 are known to work; nextpnr must be
+  built with `-DARCH=himbaechel` (distributions' `nextpnr-gowin` is the
+  old, unsupported backend).
 - **Python 3** (used by `tools/*.py`) and **bash** (`tools/run_tests.sh`).
+
+`tools/find_tool.py` looks each FPGA tool up in this order: its environment
+variable (`YOSYS`, `NEXTPNR_HIMBAECHEL`, `GOWIN_PACK` or `OPENFPGALOADER`,
+set to the program's full path), the Boards Manager `oss-cad-suite-gowin`
+tool, PATH, and the usual install folders (`~/oss-cad-suite/bin`,
+`~/.local/bin`, `~/miniconda3/bin`, `~/miniforge3/bin`, `~/anaconda3/bin`,
+`/opt/oss-cad-suite/bin`, ...) - the Arduino IDE started from the desktop
+does not read `~/.bashrc`, so a tool that is only on PATH through a line
+there or a conda/venv activation is invisible to it. For `gowin_pack` it
+also tries `python3 -m apycula.gowin_pack` before those folders.
 
 ## Installing via Boards Manager
 

@@ -9,6 +9,8 @@ Steps run, in order:
   2. tools/package/fetch_zephyr_toolchains.sh   (macOS/Windows toolchains -
      skipped if dist/toolchains_manifest.tsv already exists; use
      --refresh-toolchains to force, or --skip-toolchains to never run it)
+     and tools/package/make_fpga_tools.py        (FPGA tool archives, all
+     hosts - skipped the same way, if dist/fpga_tools_manifest.tsv exists)
   3. tools/package/make_release.sh              (board + Linux toolchain
      archives, regenerates package_nanotang_index.json)
   4. python3 -m json.tool package_nanotang_index.json   (sanity check)
@@ -127,6 +129,17 @@ def main():
     else:
         run(["tools/package/fetch_zephyr_toolchains.sh"])
 
+    # Step 2b: FPGA tool archives (skipped once built - they only change when
+    # platform.txt's fpga_tools.path pins a new oss-cad-suite version).
+    fpga_manifest = dist / "fpga_tools_manifest.tsv"
+    if args.skip_toolchains:
+        print("== Skipping make_fpga_tools.py (--skip-toolchains) ==")
+    elif fpga_manifest.exists() and not args.refresh_toolchains:
+        print(f"== Skipping make_fpga_tools.py ({fpga_manifest} already exists; "
+              f"pass --refresh-toolchains to rebuild) ==")
+    else:
+        run([sys.executable, "tools/package/make_fpga_tools.py"])
+
     # Step 3: board + Linux toolchain archives, regenerate the index.
     run(["tools/package/make_release.sh", version])
 
@@ -140,7 +153,7 @@ def main():
     board_archive = f"arduino-tangnano20k-{version}.tar.bz2"
     archives = sorted(
         p.name for p in dist.iterdir()
-        if p.is_file() and p.name != manifest.name
+        if p.is_file() and p.suffix != ".tsv"
         and (not p.name.startswith("arduino-tangnano20k-") or p.name == board_archive)
     )
     if not archives:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Program a Tang Nano 20K via openFPGALoader.
 
-Usage: upload.py <boot_flash> <prog.fs> <prog_flash.bin> <data.bin>
+Usage: upload.py [--tools-dir=<dir>] <boot_flash> <prog.fs> <prog_flash.bin> <data.bin>
 
 boot_flash: "0" (Tools > Boot Mode: SRAM / SRAM + SDRAM) loads the
 bitstream, which contains the whole program, into the FPGA's RAM - the
@@ -31,6 +31,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from find_tool import require_tool, take_tools_dir_arg
+
 # Must match cores/tangnano20k/flash_layout.h.
 FLASH_PROGRAM_OFFSET = 0x100000
 FLASH_DATA_OFFSET = 0x110000
@@ -40,12 +42,16 @@ FLASHED_RECORD = Path.home() / ".cache" / "nanotang" / "flashed_bitstream.sha256
 
 
 def loader(*args):
-    cmd = ["openFPGALoader", "-b", "tangnano20k", *args]
+    exe = require_tool("openFPGALoader", "FPGA programmer",
+                       "Install oss-cad-suite (https://github.com/YosysHQ/oss-cad-suite-build) "
+                       "to ~/oss-cad-suite or your distribution's openfpgaloader package")
+    cmd = [exe, "-b", "tangnano20k", *args]
     print("+ " + " ".join(cmd))
     subprocess.run(cmd, check=True)
 
 
 def main():
+    take_tools_dir_arg(sys.argv)
     if len(sys.argv) != 5:
         sys.stderr.write(__doc__)
         return 1

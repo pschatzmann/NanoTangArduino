@@ -7,8 +7,8 @@ resulting install experience looks like.
 
 ## What gets published
 
-The board package plus one toolchain archive per supported host, all
-attached to one GitHub Release:
+The board package plus, per supported host, one RISC-V toolchain archive
+and one FPGA tools archive, all attached to one GitHub Release:
 
 - `arduino-tangnano20k-<version>.tar.bz2` - the board package itself
   (`boards.txt`, `platform.txt`, `cores/`, `variants/`, `libraries/`,
@@ -50,10 +50,42 @@ running `fetch_zephyr_toolchains.sh`) still works and produces a
 Linux-only index.
 
 None of the toolchain archives need re-releasing when only the board
-package version changes, only when the Zephyr SDK version itself changes
-- `make_release.sh` regenerates their checksum/size entries every time
-regardless, but you can skip re-uploading those specific assets to the
-release if they're unchanged.
+package version changes, only when the Zephyr SDK version itself changes.
+When `$ZEPHYR_SDK_DIR` doesn't exist, `make_release.sh` keeps the index's
+existing `riscv-zephyr-elf` entry as it is - its URLs keep pointing at the
+release that first published the archives.
+
+- `oss-cad-suite-gowin-<version>-<host-triple>.tar.bz2` - the FPGA tools
+  (yosys, nextpnr-himbaechel, apicula's `gowin_pack`, openFPGALoader), a
+  second **tool** dependency. Each is the part of a
+  [YosysHQ oss-cad-suite](https://github.com/YosysHQ/oss-cad-suite-build)
+  build this flow needs: the four programs, the suite's Python for
+  `gowin_pack`, the GW2A-18C chip database, and every shared library they
+  load - about 75-105MB instead of the full suite's 500-750MB download.
+  `tools/package/make_fpga_tools.py` downloads the suite for Linux x86_64,
+  macOS x86_64 and Windows x86_64, trims it and writes
+  `dist/fpga_tools_manifest.tsv`, which `make_release.sh` merges into the
+  index. There is no arm64 macOS suite; Apple Silicon gets the x86_64
+  archive, which runs under Rosetta 2.
+
+  The version is pinned by `platform.txt`'s `fpga_tools.path` line
+  (`{runtime.tools.oss-cad-suite-gowin-2026.9.25.path}` is the suite
+  released as 2026-09-25). New yosys/nextpnr versions do break the flow
+  now and then, so to move to a newer suite: change that line, run
+  `make_fpga_tools.py`, install the result (unpack the Linux archive to
+  `<data dir>/packages/nanotang/tools/oss-cad-suite-gowin/<version>/`,
+  without its top folder) and check that a full build of an example,
+  and its upload, still work before releasing. Like the RISC-V toolchain,
+  the archives only need building and uploading when that version changes;
+  without `dist/fpga_tools_manifest.tsv`, `make_release.sh` keeps the
+  index's existing entry.
+
+  The trimming finds libraries by reading the binaries' dependency lists,
+  so it can't see files a program opens by path at run time (yosys runs
+  ABC as `lib/yosys-abc`, for example - `make_fpga_tools.py`'s `KEEP`
+  lists those). Only the Linux archive can be tested on a Linux machine;
+  check the macOS and Windows ones on those systems when the suite
+  version changes.
 
 ## Automated: `tools/package/do_release.py`
 
@@ -94,6 +126,11 @@ full list.
    ```
    Downloads and repackages the macOS/Windows archives into `dist/` - see
    above. Needs network access to GitHub; no macOS/Windows machine needed.
+   Likewise, only when `platform.txt`'s `fpga_tools.path` version changed
+   (or the very first time), build the FPGA tools archives for all hosts:
+   ```sh
+   tools/package/make_fpga_tools.py
+   ```
 3. Run the packaging script:
    ```sh
    tools/package/make_release.sh

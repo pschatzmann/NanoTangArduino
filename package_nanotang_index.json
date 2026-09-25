@@ -108,9 +108,73 @@
               "version": "0.17.0"
             }
           ]
+        },
+        {
+          "name": "Sipeed Tang Nano 20K (PicoRV32 SoC)",
+          "architecture": "tangnano20k",
+          "version": "0.2.2",
+          "category": "Contributed",
+          "url": "https://github.com/pschatzmann/arduino-tangnano20k/releases/download/v0.2.2/arduino-tangnano20k-0.2.2.tar.bz2",
+          "archiveFileName": "arduino-tangnano20k-0.2.2.tar.bz2",
+          "checksum": "SHA-256:bc1a3e1fe2a63e0db567214255f1b751dc2bb6966a9e56797d43e40d23b06d3c",
+          "size": "269036",
+          "help": {
+            "online": "https://github.com/pschatzmann/arduino-tangnano20k/blob/main/docs/BUILDING.md"
+          },
+          "boards": [
+            {
+              "name": "Tang Nano 20K (PicoRV32 SoC)"
+            }
+          ],
+          "toolsDependencies": [
+            {
+              "packager": "nanotang",
+              "name": "riscv-zephyr-elf",
+              "version": "0.17.0"
+            },
+            {
+              "packager": "nanotang",
+              "name": "oss-cad-suite-gowin",
+              "version": "2026.9.25"
+            }
+          ]
         }
       ],
       "tools": [
+        {
+          "name": "oss-cad-suite-gowin",
+          "version": "2026.9.25",
+          "systems": [
+            {
+              "host": "x86_64-pc-linux-gnu",
+              "url": "https://github.com/pschatzmann/arduino-tangnano20k/releases/download/v0.2.2/oss-cad-suite-gowin-2026.9.25-x86_64-pc-linux-gnu.tar.bz2",
+              "archiveFileName": "oss-cad-suite-gowin-2026.9.25-x86_64-pc-linux-gnu.tar.bz2",
+              "checksum": "SHA-256:43c0b2a988fa5610d4ac7d5b227f87f6f608d72bdfe5fc2f98f0b649af304703",
+              "size": "104865413"
+            },
+            {
+              "host": "x86_64-apple-darwin",
+              "url": "https://github.com/pschatzmann/arduino-tangnano20k/releases/download/v0.2.2/oss-cad-suite-gowin-2026.9.25-x86_64-apple-darwin.tar.bz2",
+              "archiveFileName": "oss-cad-suite-gowin-2026.9.25-x86_64-apple-darwin.tar.bz2",
+              "checksum": "SHA-256:9c95ccad4670f47cefbd511fb4a7eb11c7e035eafca9816fc4ba39f104899a43",
+              "size": "75373219"
+            },
+            {
+              "host": "x86_64-mingw32",
+              "url": "https://github.com/pschatzmann/arduino-tangnano20k/releases/download/v0.2.2/oss-cad-suite-gowin-2026.9.25-x86_64-mingw32.tar.bz2",
+              "archiveFileName": "oss-cad-suite-gowin-2026.9.25-x86_64-mingw32.tar.bz2",
+              "checksum": "SHA-256:107ffe3b992200c770a63c5bd3fb177c24bfc9b2284f704504ecb39f73c93192",
+              "size": "105978210"
+            },
+            {
+              "host": "arm64-apple-darwin",
+              "url": "https://github.com/pschatzmann/arduino-tangnano20k/releases/download/v0.2.2/oss-cad-suite-gowin-2026.9.25-x86_64-apple-darwin.tar.bz2",
+              "archiveFileName": "oss-cad-suite-gowin-2026.9.25-x86_64-apple-darwin.tar.bz2",
+              "checksum": "SHA-256:9c95ccad4670f47cefbd511fb4a7eb11c7e035eafca9816fc4ba39f104899a43",
+              "size": "75373219"
+            }
+          ]
+        },
         {
           "name": "riscv-zephyr-elf",
           "version": "0.17.0",
